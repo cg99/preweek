@@ -1,26 +1,58 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface: #FAF8F5;
+  --color-foreground: #2C2A28;
+  --color-accent: #C4956A;
+  --color-accent-light: #F0EBE4;
+  --color-accent-dim: #D4BFA8;
+  --color-accent-dark: #A67B56;
+  --color-success: #8BA888;
+  --color-success-light: #EAF0E9;
+  --color-warning: #C4A67A;
+  --color-secondary: #A09890;
+  --color-tertiary: #B8B0A8;
+  --color-muted: #F0EDE9;
+  --color-muted-hover: #E8E4DF;
+  --color-border: #E8E3DE;
+  --color-border-dim: #F0EDE9;
+  --color-danger: #C4847A;
+  --color-danger-light: #F5EDEC;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-scale-in: scale-in 0.2s ease-out;
+  --animate-slide-up: slide-up 0.25s ease-out;
+  --animate-pop: pop 0.25s ease-out;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-surface);
+  color: var(--color-foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.9) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pop {
+  0% { transform: scale(0.5); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+@keyframes check-draw {
+  to { stroke-dashoffset: 0; }
 }
