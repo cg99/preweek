@@ -68,116 +68,45 @@ export interface AppState {
   nextGoalId: number;
   nextHabitId: number;
   completedExpanded: boolean;
+  motivation: string;
+  settings: {
+    showAspirations: boolean;
+    showPractices: boolean;
+    showReflections: boolean;
+    theme: 'light' | 'dark';
+    colorTheme: 'warm' | 'sage' | 'sky' | 'rose' | 'slate';
+  };
 }
 
 // --- Local Storage Keys ---
 export const STORAGE_KEY = 'preweekAppState';
 
-// --- Sample/Default State ---
+// --- Default State ---
 export const DEFAULT_APP_STATE: AppState = {
   tasks: {
-    0: [], // Sunday
-    1: [
-      { id: 3, text: 'Team standup', status: 'pending' },
-      { id: 4, text: 'Review pull requests', status: 'pending' },
-    ],
-    2: [
-      { id: 5, text: 'Dentist appointment', status: 'pending' },
-      { id: 6, text: 'Grocery shopping', status: 'pending' },
-    ],
-    3: [{ id: 7, text: 'Work on game prototype', status: 'pending' }],
-    4: [
-      { id: 8, text: 'Write blog post', status: 'pending' },
-      { id: 9, text: 'Evening run', status: 'pending' },
-    ],
-    5: [{ id: 10, text: 'Read 30 pages', status: 'pending' }],
-    6: [
-      { id: 11, text: 'Plan next week', status: 'pending' },
-      { id: 12, text: 'Family dinner', status: 'pending' },
-    ],
+    0: [],
+    1: [],
+    2: [],
+    3: [],
+    4: [],
+    5: [],
+    6: [],
   },
-  overdue: [
-    { id: 1, text: 'Finish proposal', from: 'Monday' },
-    { id: 2, text: 'Call insurance', from: 'Tuesday' },
-  ],
-  completed: [
-    { id: 5, text: 'Grocery shopping', day: 'Tuesday' },
-    { id: 6, text: 'Morning workout', day: 'Monday' },
-    { id: 7, text: 'Send invoice', day: 'Wednesday' },
-  ],
-  goals: [
-    {
-      id: 1,
-      emoji: '🎮',
-      title: 'Build farming game',
-      progress: 60,
-      deadline: 'Dec 2026',
-      notes: 'Focus on core loop first',
-      milestones: [
-        { text: 'Game design doc', done: true },
-        { text: 'Core mechanics', done: true },
-        { text: 'Art style', done: false },
-        { text: 'Multiplayer', done: false },
-        { text: 'Launch', done: false },
-      ],
-    },
-    {
-      id: 2,
-      emoji: '💻',
-      title: 'Learn Node.js',
-      progress: 35,
-      deadline: 'Sep 2026',
-      notes: 'Following roadmap.sh backend path',
-      milestones: [
-        { text: 'JS fundamentals', done: true },
-        { text: 'Express basics', done: true },
-        { text: 'Databases', done: false },
-        { text: 'Auth', done: false },
-        { text: 'Deploy', done: false },
-      ],
-    },
-    {
-      id: 3,
-      emoji: '💰',
-      title: 'Save $10,000',
-      progress: 72,
-      deadline: 'Dec 2026',
-      notes: 'Automating $800/mo',
-      milestones: [
-        { text: '$2k milestone', done: true },
-        { text: '$5k milestone', done: true },
-        { text: '$7.2k now', done: false },
-        { text: '$10k target', done: false },
-      ],
-    },
-  ],
-  habits: [
-    { id: 1, icon: '🏃', name: 'Exercise', streak: 4, log: [1, 1, 0, 1, 1, 0, 0] },
-    { id: 2, icon: '📖', name: 'Read', streak: 6, log: [1, 1, 1, 1, 1, 1, 0] },
-    { id: 3, icon: '🧘', name: 'Meditate', streak: 2, log: [0, 0, 1, 0, 1, 1, 0] },
-    { id: 4, icon: '✍️', name: 'Journal', streak: 3, log: [1, 0, 1, 1, 0, 0, 0] },
-  ],
-  reflections: [
-    {
-      week: 'June 9–15, 2026',
-      well: 'Shipped the first game demo. Team loved it.',
-      improve: 'Need to start tasks earlier in the day.',
-      win: 'Presented to 3 investors.',
-      focus: 'Node.js backend course.',
-    },
-    {
-      week: 'June 2–8, 2026',
-      well: 'Consistent gym attendance. Hit 5 days.',
-      improve: 'Phone usage is still too high in evenings.',
-      win: 'Paid off credit card.',
-      focus: 'Portfolio site redesign.',
-    },
-  ],
-  nextTaskId: 20,
-  nextGoalId: 10,
-  nextHabitId: 10,
+  overdue: [],
+  completed: [],
+  goals: [],
+  habits: [],
+  reflections: [],
+  nextTaskId: 1,
+  nextGoalId: 1,
+  nextHabitId: 1,
   completedExpanded: false,
+  motivation: '',
+  settings: {
+    showAspirations: false,
+    showPractices: false,
+    showReflections: false,
+    theme: 'light',
+    colorTheme: 'warm',
+  },
 };
-
-// --- Initial State Factory ---
-const initialAppState: AppState = DEFAULT_APP_STATE;

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { StateProvider } from "@/app/providers/StateProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -26,10 +27,20 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="h-full">
-        {children}
-      </body>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var s=JSON.parse(localStorage.getItem('preweekAppState')||'{}').settings;if(s){if(s.theme==='dark')document.documentElement.classList.add('dark');var c=s.colorTheme;if(c&&c!=='warm')document.documentElement.classList.add('theme-'+c)}}catch(e){}`
+          }}
+        />
+      </head>
+    <body className="h-full bg-surface">
+      <StateProvider>
+        <div className="mx-auto w-full max-w-2xl xl:max-w-3xl">{children}</div>
+      </StateProvider>
+    </body>
     </html>
   );
 }

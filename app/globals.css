@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
-@theme inline {
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
   --color-surface: #FAF8F5;
   --color-foreground: #2C2A28;
   --color-accent: #C4956A;
@@ -18,6 +20,7 @@
   --color-border-dim: #F0EDE9;
   --color-danger: #C4847A;
   --color-danger-light: #F5EDEC;
+  --color-card: #FFFFFF;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --animate-fade-in: fade-in 0.3s ease-out;
@@ -30,6 +33,53 @@ body {
   background: var(--color-surface);
   color: var(--color-foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+:root.dark {
+  --color-surface: #0F0F0F;
+  --color-foreground: #E0DDD8;
+  --color-card: #1A1A1A;
+  --color-accent-light: #2A2218;
+  --color-accent-dim: #8B7D6E;
+  --color-muted: #242424;
+  --color-muted-hover: #2E2E2E;
+  --color-border: #333333;
+  --color-border-dim: #292929;
+  --color-secondary: #8A8A8A;
+  --color-tertiary: #666666;
+  --color-success-light: #1A2A1A;
+  --color-danger-light: #2A1A1A;
+}
+
+/* Accent color themes */
+:root,
+:root.dark {
+  --color-accent: #C4956A;
+  --color-accent-dark: #A67B56;
+}
+
+:root.theme-sage,
+:root.dark.theme-sage {
+  --color-accent: #7D9B76;
+  --color-accent-dark: #5E7A58;
+}
+
+:root.theme-sky,
+:root.dark.theme-sky {
+  --color-accent: #6B9AC4;
+  --color-accent-dark: #4E7AA8;
+}
+
+:root.theme-rose,
+:root.dark.theme-rose {
+  --color-accent: #C46B8A;
+  --color-accent-dark: #A84E6E;
+}
+
+:root.theme-slate,
+:root.dark.theme-slate {
+  --color-accent: #8A8A9E;
+  --color-accent-dark: #6E6E82;
 }
 
 @keyframes fade-in {
