@@ -233,21 +233,25 @@ export function WeekScreen() {
 
         {/* Week Days */}
         <div className="space-y-3">
-          {weekDates.map((date, dayIdx) => (
-            <DayCard
-              key={dayIdx}
-              dayNumber={date.getDate()}
-              dayName={DAYS[dayIdx]}
-              tasks={state.tasks[dayIdx] || []}
-              isToday={dayIdx === todayIdx}
-              isPast={dayIdx < todayIdx}
-              onAddTask={() => handleAddTask(dayIdx)}
-              onCompleteTask={(id) => handleCompleteTask(id, dayIdx)}
-              onRescheduleTask={(id) => handleRescheduleTask(id, dayIdx)}
-              onDeleteTask={(id) => handleDeleteTask(id, dayIdx)}
-              style={{ animation: `fade-in 0.3s ease-out ${dayIdx * 0.05}s both` }}
-            />
-          ))}
+          {weekDates.map((date, dayIdx) => {
+            const tasks = state.tasks[dayIdx] || [];
+            if (dayIdx < todayIdx && tasks.length === 0) return null;
+            return (
+              <DayCard
+                key={dayIdx}
+                dayNumber={date.getDate()}
+                dayName={DAYS[dayIdx]}
+                tasks={tasks}
+                isToday={dayIdx === todayIdx}
+                isPast={dayIdx < todayIdx}
+                onAddTask={() => handleAddTask(dayIdx)}
+                onCompleteTask={(id) => handleCompleteTask(id, dayIdx)}
+                onRescheduleTask={(id) => handleRescheduleTask(id, dayIdx)}
+                onDeleteTask={(id) => handleDeleteTask(id, dayIdx)}
+                style={{ animation: `fade-in 0.3s ease-out ${dayIdx * 0.05}s both` }}
+              />
+            );
+          })}
         </div>
 
         {/* Carried Over (muted, lower priority) */}

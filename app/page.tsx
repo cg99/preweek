@@ -1,11 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useAppState } from '@/app/hooks/useAppState';
 import { Modal } from '@/app/components/Modal';
 import { useToast, ToastDisplay } from '@/app/components/Toast';
 import { DEFAULT_APP_STATE } from '@/lib/appState';
-import { QuickLog } from '@/app/components/QuickLog';
 import { WeekScreen } from '@/app/week/WeekScreen';
 import { GoalsScreen } from '@/app/goals/GoalsScreen';
 import { HabitsScreen } from '@/app/habits/HabitsScreen';
@@ -115,12 +115,10 @@ export default function Home() {
         title="Settings"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="8" cy="8" r="2.5" />
-          <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+          <path d="M2 4h12M2 8h12M2 12h12" />
         </svg>
       </button>
 
-      <QuickLog />
       <WeekScreen />
 
       {settings.showAspirations && (
@@ -306,6 +304,12 @@ export default function Home() {
             >
               Reset all data
             </button>
+          </div>
+
+          <div className="border-t border-border-dim pt-4 flex justify-center gap-4 text-xs text-tertiary">
+            <Link href="/about" className="hover:text-foreground transition-colors" onClick={() => setShowSettings(false)}>About</Link>
+            <Link href="/contact" className="hover:text-foreground transition-colors" onClick={() => setShowSettings(false)}>Contact</Link>
+            <Link href="/privacy" className="hover:text-foreground transition-colors" onClick={() => setShowSettings(false)}>Privacy</Link>
           </div>
         </div>
       </Modal>

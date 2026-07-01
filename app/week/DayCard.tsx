@@ -32,6 +32,8 @@ export function DayCard({
       className={`rounded-2xl border p-4 transition-shadow ${
         isToday
           ? 'border-accent bg-card shadow-sm ring-2 ring-accent/30'
+          : isPast
+          ? 'border-border-dim bg-card/50 opacity-60'
           : 'border-border bg-card hover:shadow-sm'
       }`}
       style={style}
