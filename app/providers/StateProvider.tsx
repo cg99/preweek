@@ -250,6 +250,17 @@ function saveLocalState(state: AppState) {
   }
 }
 
+function mergeStates(local: AppState | null, remote: AppState): AppState {
+  if (!local) return remote;
+  const emptyLocal = Object.values(local.tasks).every((t) => t.length === 0)
+    && local.overdue.length === 0
+    && local.goals.length === 0
+    && local.habits.length === 0
+    && local.reflections.length === 0;
+  if (emptyLocal) return remote;
+  return local;
+}
+
 function createDefaultState(): AppState {
   const freshState = structuredClone(DEFAULT_APP_STATE);
   const todayIdx = new Date().getDay();
@@ -279,11 +290,17 @@ export function StateProvider({ children }: { children: ReactNode }) {
   // Keep ref in sync
   useEffect(() => { stateRef.current = state; }, [state]);
 
-  // Check session on mount
+  // Check session on mount and load remote data if signed in
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
+      setSession(s);
+      if (s) {
+        const remote = await loadFullState(s.user.id);
+        if (remote) {
+          setLocalState((prev) => mergeStates(prev, remote));
+        }
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -314,25 +331,27 @@ export function StateProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return error.message;
 
-    // Upload local data to Supabase
     const currentState = stateRef.current || createDefaultState();
-    const remoteState = await loadFullState((await supabase.auth.getSession()).data.session!.user.id);
+    const userId = (await supabase.auth.getSession()).data.session!.user.id;
+    const remoteState = await loadFullState(userId);
 
     if (remoteState) {
-      // Merge: prefer local data over remote (local is more recent)
-      await persistFullState(session?.user?.id || (await supabase.auth.getSession()).data.session!.user.id, currentState);
+      const merged = mergeStates(currentState, remoteState);
+      if (merged !== currentState) {
+        setLocalState(merged);
+      }
+      await persistFullState(userId, merged);
     } else {
-      await persistFullState((await supabase.auth.getSession()).data.session!.user.id, currentState);
+      await persistFullState(userId, currentState);
     }
     return null;
-  }, [session]);
+  }, []);
 
   const signUp = useCallback(async (email: string, password: string): Promise<string | null> => {
     const supabase = createClient();
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) return error.message;
 
-    // Wait briefly for the auto-profile trigger, then upload local data
     setTimeout(async () => {
       const currentState = stateRef.current || createDefaultState();
       const { data: { session } } = await supabase.auth.getSession();
