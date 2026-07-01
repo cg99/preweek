@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ritual — your weekly practice",
+  title: "Preweek — Pre Week Planning App",
   description: "Set intentions, nurture aspirations, and reflect on what matters.",
 };
 
