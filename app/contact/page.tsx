@@ -18,7 +18,7 @@ export default function ContactPage() {
         </p>
         <p>
           Open an issue on{' '}
-          <a href="https://github.com/anomalyco/opencode/issues" target="_blank" rel="noopener noreferrer"
+          <a href="https://github.com/cg99/preweek/issues" target="_blank" rel="noopener noreferrer"
             className="text-accent hover:text-accent-dark transition-colors underline underline-offset-2">
             GitHub
           </a>{' '}

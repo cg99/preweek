@@ -45,7 +45,11 @@ export default function PrivacyPage() {
 
         <h2 className="text-foreground font-semibold pt-2">Contact</h2>
         <p>
-          For privacy-related inquiries, open an issue on our GitHub repository.
+          For privacy-related inquiries, open an issue on{' '}
+          <a href="https://github.com/cg99/preweek/issues" target="_blank" rel="noopener noreferrer"
+            className="text-accent hover:text-accent-dark transition-colors underline underline-offset-2">
+            GitHub
+          </a>.
         </p>
 
         <p className="text-tertiary text-xs pt-4">Last updated: July 2026</p>
