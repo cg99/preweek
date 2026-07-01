@@ -307,6 +307,7 @@ export default function Home() {
           </div>
 
           <div className="border-t border-border-dim pt-4 flex justify-center gap-4 text-xs text-tertiary">
+            <Link href="/guide" className="hover:text-foreground transition-colors" onClick={() => setShowSettings(false)}>Guide</Link>
             <Link href="/about" className="hover:text-foreground transition-colors" onClick={() => setShowSettings(false)}>About</Link>
             <Link href="/contact" className="hover:text-foreground transition-colors" onClick={() => setShowSettings(false)}>Contact</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors" onClick={() => setShowSettings(false)}>Privacy</Link>
