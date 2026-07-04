@@ -1,33 +1,19 @@
 'use client';
 
-import { useMemo } from 'react';
-
 export function useWeekDates() {
-  const today = useMemo(() => new Date(), []);
-  const todayIdx = today.getDay(); // 0 = Sunday, 6 = Saturday
-  const todayDate = today.getDate();
+  const today = new Date();
 
-  // Calculate week start (Sunday)
-  const weekStart = useMemo(() => {
+  // Window: [today-2, today-1, today, today+1, ..., today+4]
+  const weekDates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
-    d.setDate(today.getDate() - todayIdx);
+    d.setDate(today.getDate() + (i - 2));
     return d;
-  }, [today, todayIdx]);
-
-  // Get array of all 7 days in the week
-  const weekDates = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(weekStart);
-      d.setDate(weekStart.getDate() + i);
-      return d;
-    });
-  }, [weekStart]);
+  });
 
   return {
     today,
-    todayIdx,
-    todayDate,
-    weekStart,
+    todayIdx: 2,
+    todayDate: today.getDate(),
     weekDates,
   };
 }

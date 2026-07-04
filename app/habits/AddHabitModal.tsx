@@ -13,6 +13,11 @@ export function AddHabitModal({ isOpen, onClose, onAdd }: AddHabitModalProps) {
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('');
 
+  const handleClose = () => {
+    setName(''); setIcon('');
+    onClose();
+  };
+
   const handleAdd = () => {
     if (!name.trim()) return;
     onAdd(name, icon || '⭐');
@@ -23,11 +28,11 @@ export function AddHabitModal({ isOpen, onClose, onAdd }: AddHabitModalProps) {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleAdd();
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') handleClose();
   };
 
   return (
-    <Modal isOpen={isOpen} title="New practice" onClose={onClose}>
+    <Modal isOpen={isOpen} title="New practice" onClose={handleClose}>
       <div className="space-y-4">
         <input
           type="text"
@@ -50,7 +55,7 @@ export function AddHabitModal({ isOpen, onClose, onAdd }: AddHabitModalProps) {
 
         <div className="flex gap-3 pt-4">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="flex-1 rounded-xl border border-border bg-card py-3 font-medium text-foreground hover:bg-muted transition-colors"
           >
             Cancel

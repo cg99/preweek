@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client';
 import type { AppState, Task, OverdueTask, Goal, Habit, Reflection } from '@/lib/appState';
 import { DEFAULT_APP_STATE, STORAGE_KEY } from '@/lib/appState';
 
+type SyncStatus = 'idle' | 'syncing' | 'error';
+
 interface AppStateContextValue {
   state: AppState | null;
   setState: (state: AppState) => void;
@@ -14,6 +16,9 @@ interface AppStateContextValue {
   signUp: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<string | null>;
+  syncStatus: SyncStatus;
+  syncError: string | null;
+  clearSyncError: () => void;
 }
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
@@ -73,15 +78,15 @@ async function persistFullState(userId: string, state: AppState) {
     await supabase.from('goal_milestones').delete().in('goal_id', goalIds);
   }
   await supabase.from('goals').delete().eq('user_id', userId);
-  for (let i = 0; i < state.goals.length; i++) {
-    const g = state.goals[i];
-    await supabase
-      .from('goals')
-      .insert({ id: g.id, user_id: userId, emoji: g.emoji, title: g.title, progress: g.progress, deadline: g.deadline, notes: g.notes, sort_order: i });
-    if (g.milestones.length > 0) {
-      await supabase.from('goal_milestones').insert(
-        g.milestones.map((m, mi) => ({ goal_id: g.id, text: m.text, done: m.done, sort_order: mi })),
-      );
+  if (state.goals.length > 0) {
+    await supabase.from('goals').insert(
+      state.goals.map((g, i) => ({ id: g.id, user_id: userId, emoji: g.emoji, title: g.title, progress: g.progress, deadline: g.deadline, notes: g.notes, sort_order: i })),
+    );
+    const allMilestones = state.goals.flatMap((g) =>
+      g.milestones.map((m, mi) => ({ goal_id: g.id, text: m.text, done: m.done, sort_order: mi })),
+    );
+    if (allMilestones.length > 0) {
+      await supabase.from('goal_milestones').insert(allMilestones);
     }
   }
 
@@ -90,20 +95,21 @@ async function persistFullState(userId: string, state: AppState) {
     await supabase.from('habit_logs').delete().in('habit_id', habitIds);
   }
   await supabase.from('habits').delete().eq('user_id', userId);
-  const weekStart = getWeekStart();
-  for (let i = 0; i < state.habits.length; i++) {
-    const h = state.habits[i];
-    await supabase
-      .from('habits')
-      .insert({ id: h.id, user_id: userId, icon: h.icon, name: h.name, sort_order: i });
-    const logRows = h.log.map((val, dayIdx) => ({
-      habit_id: h.id,
-      day_index: dayIdx,
-      value: val,
-      week_start: weekStart,
-    })).filter((r) => r.value === 1);
-    if (logRows.length > 0) {
-      await supabase.from('habit_logs').insert(logRows);
+  if (state.habits.length > 0) {
+    const weekStart = getWeekStart();
+    await supabase.from('habits').insert(
+      state.habits.map((h, i) => ({ id: h.id, user_id: userId, icon: h.icon, name: h.name, sort_order: i })),
+    );
+    const allLogRows = state.habits.flatMap((h) =>
+      h.log.map((val, dayIdx) => ({
+        habit_id: h.id,
+        day_index: dayIdx,
+        value: val,
+        week_start: weekStart,
+      })).filter((r) => r.value === 1),
+    );
+    if (allLogRows.length > 0) {
+      await supabase.from('habit_logs').insert(allLogRows);
     }
   }
 
@@ -128,7 +134,7 @@ async function loadFullState(userId: string): Promise<AppState | null> {
     supabase.from('reflections').select('*').eq('user_id', userId).order('created_at', { ascending: false }).then((r) => r.data || []),
   ]);
 
-  if (!settingsData && tasksData.length === 0 && goalsData.length === 0 && habitsData.length === 0) {
+  if (!settingsData && tasksData.length === 0 && goalsData.length === 0 && habitsData.length === 0 && reflectionsData.length === 0) {
     return null;
   }
 
@@ -191,6 +197,7 @@ async function loadFullState(userId: string): Promise<AppState | null> {
     tasks,
     overdue,
     completed: [],
+    deletedTasks: [],
     goals,
     habits,
     reflections,
@@ -337,6 +344,11 @@ function mergeStates(local: AppState | null, remote: AppState): AppState {
 async function syncDelta(oldState: AppState, newState: AppState, userId: string) {
   const supabase = createClient();
 
+  async function q(p: PromiseLike<{ data: unknown; error: unknown }>, label: string): Promise<void> {
+    const { error } = await p;
+    if (error) throw new Error(`[sync] ${label}: ${(error as { message: string }).message}`);
+  }
+
   // Settings — always upsert
   const settingsRow: Record<string, unknown> = {
     user_id: userId,
@@ -347,15 +359,15 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
   };
   const { error: settingsErr } = await supabase.from('settings').upsert({ ...settingsRow, color_theme: newState.settings.colorTheme });
   if (settingsErr) {
-    await supabase.from('settings').upsert(settingsRow);
+    await q(supabase.from('settings').upsert(settingsRow), 'settings upsert fallback');
   }
 
   // Motivation
-  await supabase.from('motivations').upsert({
+  await q(supabase.from('motivations').upsert({
     user_id: userId,
     text: newState.motivation,
     updated_at: new Date().toISOString(),
-  });
+  }), 'motivation upsert');
 
   // Tasks per day — compute additions, removals, updates
   for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
@@ -366,20 +378,20 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
 
     const toDelete = oldTasks.filter((t) => !newIds.has(t.id)).map((t) => t.id);
     if (toDelete.length > 0) {
-      await supabase.from('tasks').delete().in('id', toDelete).eq('user_id', userId);
+      await q(supabase.from('tasks').delete().in('id', toDelete).eq('user_id', userId), `tasks delete day ${dayIdx}`);
     }
 
     const toInsert = newTasks.filter((t) => !oldIds.has(t.id));
     if (toInsert.length > 0) {
-      await supabase.from('tasks').insert(
+      await q(supabase.from('tasks').insert(
         toInsert.map((t) => ({ id: t.id, user_id: userId, day_index: dayIdx, text: t.text, status: t.status })),
-      );
+      ), `tasks insert day ${dayIdx}`);
     }
 
     for (const t of newTasks.filter((t) => oldIds.has(t.id))) {
       const oldT = oldTasks.find((ot) => ot.id === t.id);
       if (oldT && (oldT.text !== t.text || oldT.status !== t.status)) {
-        await supabase.from('tasks').update({ text: t.text, status: t.status, day_index: dayIdx }).eq('id', t.id).eq('user_id', userId);
+        await q(supabase.from('tasks').update({ text: t.text, status: t.status, day_index: dayIdx }).eq('id', t.id).eq('user_id', userId), `tasks update ${t.id}`);
       }
     }
   }
@@ -390,13 +402,13 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
     const newIds = new Set(newState.overdue.map((o) => o.id));
     const toDelete = oldState.overdue.filter((o) => !newIds.has(o.id)).map((o) => o.id);
     if (toDelete.length > 0) {
-      await supabase.from('overdue_tasks').delete().in('id', toDelete).eq('user_id', userId);
+      await q(supabase.from('overdue_tasks').delete().in('id', toDelete).eq('user_id', userId), 'overdue delete');
     }
     const toInsert = newState.overdue.filter((o) => !oldIds.has(o.id));
     if (toInsert.length > 0) {
-      await supabase.from('overdue_tasks').insert(
+      await q(supabase.from('overdue_tasks').insert(
         toInsert.map((o) => ({ id: o.id, user_id: userId, text: o.text, from_day: o.from })),
-      );
+      ), 'overdue insert');
     }
   }
 
@@ -405,8 +417,8 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
     const newIds = new Set(newState.goals.map((g) => g.id));
     const toDelete = oldState.goals.filter((g) => !newIds.has(g.id)).map((g) => g.id);
     if (toDelete.length > 0) {
-      await supabase.from('goal_milestones').delete().in('goal_id', toDelete);
-      await supabase.from('goals').delete().in('id', toDelete).eq('user_id', userId);
+      await q(supabase.from('goal_milestones').delete().in('goal_id', toDelete), 'goal_milestones delete');
+      await q(supabase.from('goals').delete().in('id', toDelete).eq('user_id', userId), 'goals delete');
     }
     for (const g of newState.goals) {
       const oldG = oldState.goals.find((og) => og.id === g.id);
@@ -414,18 +426,18 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
         const changed = oldG.emoji !== g.emoji || oldG.title !== g.title || oldG.progress !== g.progress || oldG.deadline !== g.deadline || oldG.notes !== g.notes;
         const milestoneChanged = JSON.stringify(oldG.milestones) !== JSON.stringify(g.milestones);
         if (changed) {
-          await supabase.from('goals').update({ emoji: g.emoji, title: g.title, progress: g.progress, deadline: g.deadline, notes: g.notes }).eq('id', g.id).eq('user_id', userId);
+          await q(supabase.from('goals').update({ emoji: g.emoji, title: g.title, progress: g.progress, deadline: g.deadline, notes: g.notes }).eq('id', g.id).eq('user_id', userId), `goals update ${g.id}`);
         }
         if (milestoneChanged) {
-          await supabase.from('goal_milestones').delete().eq('goal_id', g.id);
+          await q(supabase.from('goal_milestones').delete().eq('goal_id', g.id), `goal_milestones delete ${g.id}`);
           if (g.milestones.length > 0) {
-            await supabase.from('goal_milestones').insert(g.milestones.map((m, mi) => ({ goal_id: g.id, text: m.text, done: m.done, sort_order: mi })));
+            await q(supabase.from('goal_milestones').insert(g.milestones.map((m, mi) => ({ goal_id: g.id, text: m.text, done: m.done, sort_order: mi }))), `goal_milestones insert ${g.id}`);
           }
         }
       } else {
-        await supabase.from('goals').insert({ id: g.id, user_id: userId, emoji: g.emoji, title: g.title, progress: g.progress, deadline: g.deadline, notes: g.notes });
+        await q(supabase.from('goals').insert({ id: g.id, user_id: userId, emoji: g.emoji, title: g.title, progress: g.progress, deadline: g.deadline, notes: g.notes }), `goals insert ${g.id}`);
         if (g.milestones.length > 0) {
-          await supabase.from('goal_milestones').insert(g.milestones.map((m, mi) => ({ goal_id: g.id, text: m.text, done: m.done, sort_order: mi })));
+          await q(supabase.from('goal_milestones').insert(g.milestones.map((m, mi) => ({ goal_id: g.id, text: m.text, done: m.done, sort_order: mi }))), `goal_milestones insert ${g.id}`);
         }
       }
     }
@@ -436,8 +448,8 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
     const newIds = new Set(newState.habits.map((h) => h.id));
     const toDelete = oldState.habits.filter((h) => !newIds.has(h.id)).map((h) => h.id);
     if (toDelete.length > 0) {
-      await supabase.from('habit_logs').delete().in('habit_id', toDelete);
-      await supabase.from('habits').delete().in('id', toDelete).eq('user_id', userId);
+      await q(supabase.from('habit_logs').delete().in('habit_id', toDelete), 'habit_logs delete');
+      await q(supabase.from('habits').delete().in('id', toDelete).eq('user_id', userId), 'habits delete');
     }
     for (const h of newState.habits) {
       const oldH = oldState.habits.find((oh) => oh.id === h.id);
@@ -445,11 +457,11 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
         const changed = oldH.icon !== h.icon || oldH.name !== h.name;
         const logChanged = JSON.stringify(oldH.log) !== JSON.stringify(h.log);
         if (changed) {
-          await supabase.from('habits').update({ icon: h.icon, name: h.name }).eq('id', h.id).eq('user_id', userId);
+          await q(supabase.from('habits').update({ icon: h.icon, name: h.name }).eq('id', h.id).eq('user_id', userId), `habits update ${h.id}`);
         }
         if (logChanged) {
           const weekStart = getWeekStart();
-          await supabase.from('habit_logs').delete().eq('habit_id', h.id).eq('week_start', weekStart);
+          await q(supabase.from('habit_logs').delete().eq('habit_id', h.id).eq('week_start', weekStart), `habit_logs delete ${h.id}`);
           const logRows = h.log.map((val, dayIdx) => ({
             habit_id: h.id,
             day_index: dayIdx,
@@ -457,11 +469,11 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
             week_start: weekStart,
           })).filter((r) => r.value === 1);
           if (logRows.length > 0) {
-            await supabase.from('habit_logs').insert(logRows);
+            await q(supabase.from('habit_logs').insert(logRows), `habit_logs insert ${h.id}`);
           }
         }
       } else {
-        await supabase.from('habits').insert({ id: h.id, user_id: userId, icon: h.icon, name: h.name });
+        await q(supabase.from('habits').insert({ id: h.id, user_id: userId, icon: h.icon, name: h.name }), `habits insert ${h.id}`);
         const weekStart = getWeekStart();
         const logRows = h.log.map((val, dayIdx) => ({
           habit_id: h.id,
@@ -470,7 +482,7 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
           week_start: weekStart,
         })).filter((r) => r.value === 1);
         if (logRows.length > 0) {
-          await supabase.from('habit_logs').insert(logRows);
+          await q(supabase.from('habit_logs').insert(logRows), `habit_logs insert ${h.id}`);
         }
       }
     }
@@ -480,12 +492,12 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
   for (const r of newState.reflections) {
     const oldR = oldState.reflections.find((or) => or.week === r.week);
     if (!oldR || oldR.well !== r.well || oldR.improve !== r.improve || oldR.win !== r.win || oldR.focus !== r.focus) {
-      await supabase.from('reflections').upsert({ user_id: userId, week: r.week, well: r.well, improve: r.improve, win: r.win, focus: r.focus }, { onConflict: 'user_id, week' });
+      await q(supabase.from('reflections').upsert({ user_id: userId, week: r.week, well: r.well, improve: r.improve, win: r.win, focus: r.focus }, { onConflict: 'user_id, week' }), `reflections upsert ${r.week}`);
     }
   }
   for (const r of oldState.reflections) {
     if (!newState.reflections.find((nr) => nr.week === r.week)) {
-      await supabase.from('reflections').delete().eq('user_id', userId).eq('week', r.week);
+      await q(supabase.from('reflections').delete().eq('user_id', userId).eq('week', r.week), `reflections delete ${r.week}`);
     }
   }
 }
@@ -505,16 +517,16 @@ function createDefaultState(): AppState {
 
 export function StateProvider({ children }: { children: ReactNode }) {
   const [state, setLocalState] = useState<AppState | null>(null);
+
+  // Hydrate from localStorage on mount. Server + client both render null initially,
+  // so there's no hydration mismatch. The effect runs once on the client.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setLocalState(loadLocalState() || createDefaultState()); }, []);
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [syncError, setSyncErrorMsg] = useState<string | null>(null);
   const syncingRef = useRef(false);
   const stateRef = useRef<AppState | null>(null);
-
-  // Load from localStorage after hydration (client only)
-  useEffect(() => {
-    const local = loadLocalState() || createDefaultState();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLocalState(local);
-  }, []);
 
   // Keep ref in sync
   useEffect(() => { stateRef.current = state; }, [state]);
@@ -546,13 +558,28 @@ export function StateProvider({ children }: { children: ReactNode }) {
     }
   }, [state]);
 
-  // setState: saves locally, syncs delta to Supabase if signed in
+  const clearSyncError = useCallback(() => {
+    setSyncErrorMsg(null);
+    setSyncStatus('idle');
+  }, []);
+
+  // setState: optimistic local update, syncs delta to Supabase if signed in
   const setState = useCallback((newState: AppState) => {
     const oldState = stateRef.current;
     setLocalState(newState);
     if (session && oldState && !syncingRef.current) {
       syncingRef.current = true;
-      syncDelta(oldState, newState, session.user.id).finally(() => { syncingRef.current = false; });
+      setSyncStatus('syncing');
+      setSyncErrorMsg(null);
+      syncDelta(oldState, newState, session.user.id).then(() => {
+        setSyncStatus('idle');
+      }).catch((e: Error) => {
+        console.error('syncDelta failed:', e);
+        setLocalState(oldState);
+        if (oldState) saveLocalState(oldState);
+        setSyncStatus('error');
+        setSyncErrorMsg('Connection lost — changes saved locally');
+      }).finally(() => { syncingRef.current = false; });
     }
   }, [session]);
 
@@ -593,19 +620,20 @@ export function StateProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signUp({ email, password });
     if (error) return error.message;
 
-    setTimeout(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
       const currentState = stateRef.current || createDefaultState();
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        await persistFullState(session.user.id, currentState);
-      }
-    }, 2000);
+      await persistFullState(session.user.id, currentState);
+    }
     return null;
   }, []);
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
+    const fresh = createDefaultState();
+    setLocalState(fresh);
+    stateRef.current = fresh;
   }, []);
 
   const resetPassword = useCallback(async (email: string): Promise<string | null> => {
@@ -617,7 +645,7 @@ export function StateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AppStateContext.Provider value={{ state, setState, isLoading: false, session, signIn, signUp, signOut, resetPassword }}>
+    <AppStateContext.Provider value={{ state, setState, isLoading: false, session, signIn, signUp, signOut, resetPassword, syncStatus, syncError, clearSyncError }}>
       {children}
     </AppStateContext.Provider>
   );

@@ -14,6 +14,11 @@ interface AddTaskModalProps {
 export function AddTaskModal({ isOpen, dayIndex, onClose, onAdd }: AddTaskModalProps) {
   const [input, setInput] = useState('');
 
+  const handleClose = () => {
+    setInput('');
+    onClose();
+  };
+
   const handleAdd = () => {
     if (!input.trim()) return;
     onAdd(input);
@@ -23,13 +28,13 @@ export function AddTaskModal({ isOpen, dayIndex, onClose, onAdd }: AddTaskModalP
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleAdd();
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') handleClose();
   };
 
   const dayName = dayIndex !== null ? DAYS[dayIndex] : 'Unknown';
 
   return (
-    <Modal isOpen={isOpen} title={`Set intention — ${dayName}`} onClose={onClose}>
+    <Modal isOpen={isOpen} title={`Set intention — ${dayName}`} onClose={handleClose}>
       <div className="space-y-4">
         <input
           type="text"
@@ -43,7 +48,7 @@ export function AddTaskModal({ isOpen, dayIndex, onClose, onAdd }: AddTaskModalP
 
         <div className="flex gap-3 pt-4">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="flex-1 rounded-xl border border-border bg-card py-3 font-medium text-foreground hover:bg-muted transition-colors"
           >
             Cancel

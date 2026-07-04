@@ -35,6 +35,14 @@ body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
+input, textarea, select {
+  font-size: 16px;
+}
+
+html {
+  touch-action: manipulation;
+}
+
 :root.dark {
   --color-surface: #0F0F0F;
   --color-foreground: #E0DDD8;

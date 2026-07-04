@@ -22,6 +22,15 @@ export interface CompletedTask {
   day: string; // Day name (e.g., "Tuesday")
 }
 
+// --- Recently Deleted Task Interface ---
+export interface DeletedTask {
+  id: number;
+  text: string;
+  dayIndex: number;
+  status: Task['status'];
+  deletedAt: number; // timestamp ms
+}
+
 // --- Goal Interface ---
 export interface Milestone {
   text: string;
@@ -61,6 +70,7 @@ export interface AppState {
   tasks: Record<number, Task[]>; // Keyed by dayIndex (0-6)
   overdue: OverdueTask[];
   completed: CompletedTask[];
+  deletedTasks: DeletedTask[];
   goals: Goal[];
   habits: Habit[];
   reflections: Reflection[];
@@ -94,6 +104,7 @@ export const DEFAULT_APP_STATE: AppState = {
   },
   overdue: [],
   completed: [],
+  deletedTasks: [],
   goals: [],
   habits: [],
   reflections: [],

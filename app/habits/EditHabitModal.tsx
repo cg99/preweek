@@ -2,7 +2,7 @@
 
 import { Habit } from '@/lib/appState';
 import { Modal } from '@/app/components/Modal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface EditHabitModalProps {
   isOpen: boolean;
@@ -12,8 +12,11 @@ interface EditHabitModalProps {
 }
 
 export function EditHabitModal({ isOpen, habit, onClose, onSave }: EditHabitModalProps) {
-  const [name, setName] = useState(habit?.name || '');
-  const [icon, setIcon] = useState(habit?.icon || '');
+  const [name, setName] = useState('');
+  const [icon, setIcon] = useState('');
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (habit) { setName(habit.name); setIcon(habit.icon); } }, [habit]);
 
   if (!habit) return null;
 

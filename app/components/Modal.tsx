@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 
 interface ModalProps {
   isOpen: boolean;
@@ -10,6 +10,15 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, title, children, onClose }: ModalProps) {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -32,12 +41,23 @@ export function Modal({ isOpen, title, children, onClose }: ModalProps) {
           </div>
 
           {/* Header */}
-          <div className="px-6 py-2">
+          <div className="px-6 py-2 flex items-center gap-3">
+            <button
+              onClick={onClose}
+              className="flex items-center justify-center h-7 w-7 rounded-full text-secondary hover:text-foreground hover:bg-muted transition-colors -ml-1"
+              aria-label="Back"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="2">
+                <path d="M10 2L4 8l6 6" />
+              </svg>
+            </button>
             <h2 className="text-xl font-bold text-foreground">{title}</h2>
           </div>
 
           {/* Content */}
-          <div className="px-6 pb-6">{children}</div>
+          <div className="px-8 pb-8 pt-2 max-h-[70vh] md:max-h-[65vh] overflow-y-auto overscroll-contain">
+            {children}
+          </div>
         </div>
       </div>
     </>

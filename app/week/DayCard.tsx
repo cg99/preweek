@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Task } from '@/lib/appState';
 
 interface DayCardProps {
@@ -10,6 +11,7 @@ interface DayCardProps {
   isPast: boolean;
   onAddTask: () => void;
   onCompleteTask: (id: number) => void;
+  onEditTask: (id: number, text: string) => void;
   onRescheduleTask: (id: number) => void;
   onDeleteTask: (id: number) => void;
   style?: React.CSSProperties;
@@ -23,10 +25,14 @@ export function DayCard({
   isPast,
   onAddTask,
   onCompleteTask,
+  onEditTask,
   onRescheduleTask,
   onDeleteTask,
   style,
 }: DayCardProps) {
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+
   return (
     <div
       className={`rounded-2xl border p-4 transition-shadow ${
@@ -62,7 +68,7 @@ export function DayCard({
           return (
             <div
               key={task.id}
-              className="group flex items-center gap-3 border-b border-border-dim py-3 first:pt-3 last:border-b-0"
+              className="group flex items-center gap-2 border-b border-border-dim py-3 first:pt-3 last:border-b-0"
             >
               {isCompleted ? (
                 <button
@@ -81,9 +87,45 @@ export function DayCard({
                   title="Honor intention"
                 />
               )}
-              <span className={`flex-1 text-sm ${isCompleted ? 'text-tertiary line-through' : 'text-foreground'}`}>{task.text}</span>
+              {editingId === task.id ? (
+                <input
+                  autoFocus
+                  value={editDraft}
+                  onChange={(e) => setEditDraft(e.target.value)}
+                  onBlur={() => {
+                    if (editDraft.trim() && editDraft !== task.text) {
+                      onEditTask(task.id, editDraft.trim());
+                    }
+                    setEditingId(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      (e.target as HTMLInputElement).blur();
+                    }
+                    if (e.key === 'Escape') {
+                      setEditingId(null);
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex-1 rounded-md border border-accent bg-accent-light px-2 py-1 text-sm text-foreground outline-none"
+                />
+              ) : (
+                <button
+                  onClick={() => {
+                    if (!isCompleted) {
+                      setEditingId(task.id);
+                      setEditDraft(task.text);
+                    }
+                  }}
+                  className="flex-1 text-left text-sm truncate cursor-text hover:bg-muted rounded-sm px-1 -mx-1 transition-colors"
+                >
+                  <span className={isCompleted ? 'text-tertiary line-through' : 'text-foreground'}>
+                    {task.text}
+                  </span>
+                </button>
+              )}
 
-              {/* Actions - shown on mobile, hidden by default on desktop (revealed on hover) */}
+              {/* Actions */}
               <div className={`flex gap-1 opacity-100 md:opacity-0 transition-opacity md:group-hover:opacity-100 ${isCompleted ? 'md:opacity-100' : ''}`}>
                 {!isCompleted && (
                   <button

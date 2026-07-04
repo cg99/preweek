@@ -14,6 +14,11 @@ export function AddGoalModal({ isOpen, onClose, onAdd }: AddGoalModalProps) {
   const [emoji, setEmoji] = useState('');
   const [deadline, setDeadline] = useState('');
 
+  const handleClose = () => {
+    setTitle(''); setEmoji(''); setDeadline('');
+    onClose();
+  };
+
   const handleAdd = () => {
     if (!title.trim()) return;
     onAdd(title, emoji || '🎯', deadline);
@@ -25,11 +30,11 @@ export function AddGoalModal({ isOpen, onClose, onAdd }: AddGoalModalProps) {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleAdd();
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') handleClose();
   };
 
   return (
-    <Modal isOpen={isOpen} title="New aspiration" onClose={onClose}>
+    <Modal isOpen={isOpen} title="New aspiration" onClose={handleClose}>
       <div className="space-y-4">
         <input
           type="text"
@@ -61,7 +66,7 @@ export function AddGoalModal({ isOpen, onClose, onAdd }: AddGoalModalProps) {
 
         <div className="flex gap-3 pt-4">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="flex-1 rounded-xl border border-border bg-card py-3 font-medium text-foreground hover:bg-muted transition-colors"
           >
             Cancel

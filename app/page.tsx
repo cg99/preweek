@@ -27,7 +27,7 @@ const ToggleSwitch = ({ on, onClick }: { on: boolean; onClick: () => void }) => 
 );
 
 export default function Home() {
-  const { state, setState, session, signIn, signUp, signOut, resetPassword } = useAppState();
+  const { state, setState, session, signIn, signUp, signOut, resetPassword, syncError, clearSyncError } = useAppState();
   const [showSettings, setShowSettings] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const { show: showToast, toast, close } = useToast();
@@ -38,6 +38,25 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
+
+  useEffect(() => {
+    if (syncError) {
+      showToast(syncError);
+      clearSyncError();
+    }
+  }, [syncError, clearSyncError, showToast]);
+
+  // Prune deleted tasks older than 24 hours
+  useEffect(() => {
+    if (!state || state.deletedTasks.length === 0) return;
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const remaining = state.deletedTasks.filter((t) => t.deletedAt > cutoff);
+    if (remaining.length < state.deletedTasks.length) {
+      setState({ ...state, deletedTasks: remaining });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSettings]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -54,6 +73,14 @@ export default function Home() {
   const toggle = (key: 'showAspirations' | 'showPractices' | 'showReflections' | 'theme' | 'colorTheme', value?: string) => {
     const newVal = key === 'theme' ? (settings.theme === 'light' ? 'dark' : 'light') : key === 'colorTheme' ? value : !(settings as Record<string, unknown>)[key];
     setState({ ...state, settings: { ...settings, [key]: newVal } });
+    const labels: Record<string, string> = {
+      showAspirations: 'Aspirations',
+      showPractices: 'Practices',
+      showReflections: 'Reflections',
+      theme: settings.theme === 'dark' ? 'Light theme' : 'Dark theme',
+      colorTheme: `${String(value).charAt(0).toUpperCase() + String(value).slice(1)} accent`,
+    };
+    showToast(labels[key] || 'Setting updated');
   };
 
   const handleAuth = async () => {
@@ -68,6 +95,7 @@ export default function Home() {
       setAuthEmail('');
       setAuthPassword('');
       setAuthError('');
+      setShowSettings(false);
       showToast(authMode === 'signin' ? 'Signed in' : 'Account created');
     }
   };
@@ -75,6 +103,21 @@ export default function Home() {
   const handleSignOut = async () => {
     await signOut();
     showToast('Signed out');
+  };
+
+  const handleRestore = (task: { id: number; text: string; dayIndex: number; status: string }) => {
+    if (!state) return;
+    const newState = structuredClone(state);
+    if (task.status === 'overdue' || task.status === 'rescheduled') {
+      newState.overdue.push({ id: state.nextTaskId, text: task.text, from: 'restored' });
+    } else if (task.dayIndex >= 0) {
+      newState.tasks[task.dayIndex] = newState.tasks[task.dayIndex] || [];
+      newState.tasks[task.dayIndex].push({ id: state.nextTaskId, text: task.text, status: 'pending' });
+    }
+    newState.deletedTasks = newState.deletedTasks.filter((t) => t.id !== task.id);
+    newState.nextTaskId += 1;
+    setState(newState);
+    showToast('Intention restored');
   };
 
   const handleExport = () => {
@@ -292,6 +335,39 @@ export default function Home() {
             >
               Insights
             </button>
+            <div className="rounded-2xl border border-border bg-card">
+              <button
+                onClick={() => setShowDeleted(!showDeleted)}
+                className="w-full flex items-center justify-center p-4 text-sm font-medium text-foreground hover:bg-muted transition-colors rounded-2xl"
+              >
+                <span>Recently deleted</span>
+                <span className="text-xs text-secondary">
+                  {state.deletedTasks.length > 0 ? state.deletedTasks.length : ''}
+                  <svg className={`w-3 h-3 inline ml-1 transition-transform ${showDeleted ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="2">
+                    <path d="M6 2l6 6-6 6" />
+                  </svg>
+                </span>
+              </button>
+              {showDeleted && (
+                <div className="border-t border-border-dim px-4 py-3 space-y-2 max-h-48 overflow-y-auto">
+                  {state.deletedTasks.length === 0 ? (
+                    <div className="text-xs text-tertiary text-center py-6">No recently deleted intentions</div>
+                  ) : (
+                    state.deletedTasks.map((dt) => (
+                      <div key={dt.id} className="flex items-center gap-2 text-sm">
+                        <span className="flex-1 text-secondary truncate">{dt.text}</span>
+                        <button
+                          onClick={() => handleRestore(dt)}
+                          className="shrink-0 rounded-md bg-accent/10 px-2 py-1 text-xs font-medium text-accent-dark hover:bg-accent/20 transition-colors"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             <button
               onClick={handleExport}
               className="w-full rounded-2xl border border-border bg-card p-4 text-sm font-medium text-foreground hover:bg-muted transition-colors text-center"

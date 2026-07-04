@@ -11,6 +11,8 @@ import { AddTaskModal } from './AddTaskModal';
 import { useRef, useState, useEffect } from 'react';
 import { DayPickerModal } from './DayPickerModal';
 
+function now() { return Date.now(); }
+
 export function WeekScreen() {
   const { state, setState } = useAppState();
   const { today, todayDate, todayIdx, weekDates } = useWeekDates();
@@ -52,11 +54,17 @@ export function WeekScreen() {
     return <div className="px-4 py-6">Loading...</div>;
   }
 
-  const monthLabel = MONTHS[today.getMonth()];
-  const yearLabel = today.getFullYear();
-  const defaultQuote = QUOTES[todayIdx % QUOTES.length];
+  const defaultQuote = QUOTES[today.getDay() % QUOTES.length];
   const motivation = state.motivation || defaultQuote;
-  const dayName = DAYS[todayIdx];
+  const dayName = DAYS[today.getDay()];
+  const weekStart = weekDates[0];
+  const weekEnd = weekDates[6];
+  const rangeLabel =
+    weekStart.getMonth() === weekEnd.getMonth()
+      ? `${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()}–${weekEnd.getDate()}, ${weekEnd.getFullYear()}`
+      : `${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()} – ${MONTHS[weekEnd.getMonth()]} ${weekEnd.getDate()}, ${weekEnd.getFullYear()}`;
+
+  const dayNameFor = (dayIdx: number) => DAYS[weekDates[dayIdx].getDay()];
 
   // Handle actions
   const handleAddTask = (dayIdx: number) => {
@@ -96,9 +104,16 @@ export function WeekScreen() {
     if (!state) return;
     undoSnapshot.current = structuredClone(state);
     const newState = structuredClone(state);
+    const task = (newState.tasks[dayIdx] || []).find((t) => t.id === taskId);
     newState.tasks[dayIdx] = (newState.tasks[dayIdx] || []).filter(
       (t) => t.id !== taskId
     );
+    if (task) {
+      newState.deletedTasks = [
+        { id: task.id, text: task.text, dayIndex: dayIdx, status: task.status, deletedAt: now() },
+        ...newState.deletedTasks,
+      ].slice(0, 50);
+    }
     setState(newState);
     showToast('Intention released', undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
   };
@@ -153,7 +168,7 @@ export function WeekScreen() {
       newState.overdue = newState.overdue.filter((t) => t.id !== reassignOverdueId);
       newState.nextTaskId += 1;
       setState(newState);
-      showToast('Moved to ' + DAYS[dayIndex], undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
+      showToast('Moved to ' + dayNameFor(dayIndex), undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
       setReassignOverdueId(null);
     } else if (rescheduleTarget !== null) {
       if (!state) return;
@@ -165,8 +180,19 @@ export function WeekScreen() {
       newState.tasks[dayIndex] = newState.tasks[dayIndex] || [];
       newState.tasks[dayIndex].push(task);
       setState(newState);
-      showToast('Moved to ' + DAYS[dayIndex], undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
+      showToast('Moved to ' + dayNameFor(dayIndex), undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
       setRescheduleTarget(null);
+    }
+  };
+
+  const handleEditTask = (dayIdx: number) => (taskId: number, text: string) => {
+    if (!state) return;
+    const newState = structuredClone(state);
+    const tasks = newState.tasks[dayIdx] || [];
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      task.text = text;
+      setState(newState);
     }
   };
 
@@ -174,7 +200,14 @@ export function WeekScreen() {
     if (!state) return;
     undoSnapshot.current = structuredClone(state);
     const newState = structuredClone(state);
+    const task = newState.overdue.find((t) => t.id === taskId);
     newState.overdue = newState.overdue.filter((t) => t.id !== taskId);
+    if (task) {
+      newState.deletedTasks = [
+        { id: task.id, text: task.text, dayIndex: -1, status: 'pending' as const, deletedAt: now() },
+        ...newState.deletedTasks,
+      ].slice(0, 50);
+    }
     setState(newState);
     showToast('Intention released', undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
   };
@@ -184,7 +217,7 @@ export function WeekScreen() {
       {/* Header */}
       <div className="px-4 sm:px-6 pt-6 sm:pt-8 pb-4">
         <div className="text-xs font-semibold tracking-widest text-secondary uppercase mb-2">
-          {monthLabel} {yearLabel}
+          {rangeLabel}
         </div>
         {editingMotivation ? (
           <input
@@ -226,7 +259,7 @@ export function WeekScreen() {
 
       {/* Content Area */}
       <div className="px-4 sm:px-6 pb-6 space-y-4">
-        {/* This Week Label */}
+        {/* Section Label */}
         <div className="text-xs font-semibold tracking-widest text-secondary uppercase">
           This cycle
         </div>
@@ -240,12 +273,13 @@ export function WeekScreen() {
               <DayCard
                 key={dayIdx}
                 dayNumber={date.getDate()}
-                dayName={DAYS[dayIdx]}
+                dayName={DAYS[date.getDay()]}
                 tasks={tasks}
                 isToday={dayIdx === todayIdx}
                 isPast={dayIdx < todayIdx}
                 onAddTask={() => handleAddTask(dayIdx)}
                 onCompleteTask={(id) => handleCompleteTask(id, dayIdx)}
+                onEditTask={handleEditTask(dayIdx)}
                 onRescheduleTask={(id) => handleRescheduleTask(id, dayIdx)}
                 onDeleteTask={(id) => handleDeleteTask(id, dayIdx)}
                 style={{ animation: `fade-in 0.3s ease-out ${dayIdx * 0.05}s both` }}

@@ -2,7 +2,7 @@
 
 import { Goal } from '@/lib/appState';
 import { Modal } from '@/app/components/Modal';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface EditGoalModalProps {
   isOpen: boolean;
@@ -12,10 +12,13 @@ interface EditGoalModalProps {
 }
 
 export function EditGoalModal({ isOpen, goal, onClose, onSave }: EditGoalModalProps) {
-  const [title, setTitle] = useState(goal?.title || '');
-  const [emoji, setEmoji] = useState(goal?.emoji || '');
-  const [deadline, setDeadline] = useState(goal?.deadline || '');
-  const [notes, setNotes] = useState(goal?.notes || '');
+  const [title, setTitle] = useState('');
+  const [emoji, setEmoji] = useState('');
+  const [deadline, setDeadline] = useState('');
+  const [notes, setNotes] = useState('');
+
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (goal) { setTitle(goal.title); setEmoji(goal.emoji); setDeadline(goal.deadline); setNotes(goal.notes); } }, [goal]);
 
   if (!goal) return null;
 

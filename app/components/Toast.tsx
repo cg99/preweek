@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface ToastProps {
   message: string;
@@ -9,15 +9,16 @@ interface ToastProps {
 }
 
 export function ToastDisplay({ toast, onClose }: { toast: ToastProps | null; onClose: () => void }) {
-  const [isVisible, setIsVisible] = useState(!!toast);
+  const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
     if (toast) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsVisible(true);
       const timer = setTimeout(() => {
         setIsVisible(false);
         setTimeout(onClose, 300);
       }, toast.duration);
-
       return () => clearTimeout(timer);
     }
   }, [toast, onClose]);
@@ -26,7 +27,7 @@ export function ToastDisplay({ toast, onClose }: { toast: ToastProps | null; onC
 
   return (
     <div
-      className={`fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 ${
+      className={`fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-[70] transition-all duration-300 ${
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
       }`}
     >
@@ -53,16 +54,16 @@ export function useToast() {
   const [toast, setToast] = useState<ToastProps | null>(null);
   const actionRef = useRef<(() => void) | null>(null);
 
-  const show = (message: string, duration?: number, onUndo?: () => void) => {
+  const show = useCallback((message: string, duration?: number, onUndo?: () => void) => {
     actionRef.current = onUndo || null;
     setToast({
       message,
       duration: onUndo ? 5000 : (duration || 2000),
       action: onUndo ? { label: 'Undo', onClick: () => { actionRef.current?.(); actionRef.current = null; } } : undefined,
     });
-  };
+  }, []);
 
-  const close = () => setToast(null);
+  const close = useCallback(() => setToast(null), []);
 
   return { show, toast, close };
 }

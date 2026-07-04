@@ -1,7 +1,6 @@
 'use client';
 
 import { useAppState } from '@/app/hooks/useAppState';
-import { useWeekDates } from '@/app/hooks/useWeekDates';
 import { useToast, ToastDisplay } from '@/app/components/Toast';
 import { HabitCard } from './HabitCard';
 import { AddHabitModal } from './AddHabitModal';
@@ -10,7 +9,7 @@ import { useState } from 'react';
 
 export function HabitsScreen() {
   const { state, setState } = useAppState();
-  const { todayIdx } = useWeekDates();
+  const todayIdx = new Date().getDay();
   const { show: showToast, toast, close } = useToast();
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [editingHabitId, setEditingHabitId] = useState<number | null>(null);
