@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, Re
 import { createClient } from '@/lib/supabase/client';
 import type { AppState, Task, OverdueTask, Goal, Habit, Reflection } from '@/lib/appState';
 import { DEFAULT_APP_STATE, STORAGE_KEY } from '@/lib/appState';
+import { formatDateKey, parseDateKey } from '@/lib/constants';
 
 type SyncStatus = 'idle' | 'syncing' | 'error';
 
@@ -56,9 +57,10 @@ async function persistFullState(userId: string, state: AppState) {
   });
 
   const taskRows: Record<string, unknown>[] = [];
-  for (const [dayIdx, tasks] of Object.entries(state.tasks)) {
+  for (const [dateKey, tasks] of Object.entries(state.tasks)) {
+    const dayOfWeek = parseDateKey(dateKey).getDay();
     for (const t of tasks) {
-      taskRows.push({ id: t.id, user_id: userId, day_index: Number(dayIdx), text: t.text, status: t.status });
+      taskRows.push({ id: t.id, user_id: userId, day_index: dayOfWeek, text: t.text, status: t.status });
     }
   }
   await supabase.from('tasks').delete().eq('user_id', userId);
@@ -138,10 +140,15 @@ async function loadFullState(userId: string): Promise<AppState | null> {
     return null;
   }
 
-  const tasks: Record<number, Task[]> = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  const tasks: Record<string, Task[]> = {};
+  const today = new Date();
+  const sunday = today.getDate() - today.getDay();
   for (const t of tasksData) {
-    tasks[t.day_index] = tasks[t.day_index] || [];
-    tasks[t.day_index].push({ id: t.id, text: t.text, status: t.status });
+    const d = new Date(today);
+    d.setDate(sunday + t.day_index);
+    const dateKey = formatDateKey(d);
+    tasks[dateKey] = tasks[dateKey] || [];
+    tasks[dateKey].push({ id: t.id, text: t.text, status: t.status });
   }
 
   const overdue: OverdueTask[] = overduesData.map((o: { id: number; text: string; from_day: string }) => ({
@@ -234,13 +241,36 @@ function loadLocalState(): AppState | null {
           }
         }
       }
-      const todayIdx = new Date().getDay();
+      const today = new Date();
+      const todayIdx = today.getDay();
       if (parsed.habits) {
         for (const habit of parsed.habits) {
           if (habit.log) {
             for (let i = todayIdx + 1; i < 7; i++) {
               habit.log[i] = 0;
             }
+          }
+        }
+      }
+      // Migrate old numeric-keyed tasks to date keys
+      if (parsed.tasks && typeof Object.keys(parsed.tasks)[0] !== 'string') {
+        const oldTasks: Record<string, Task[]> = {};
+        for (let i = 0; i < 7; i++) {
+          if (parsed.tasks[i] && parsed.tasks[i].length > 0) {
+            const d = new Date(today);
+            d.setDate(today.getDate() + (i - 2));
+            oldTasks[formatDateKey(d)] = parsed.tasks[i];
+          }
+        }
+        parsed.tasks = oldTasks;
+      }
+      // Migrate old deleted tasks with dayIndex to dateKey
+      if (parsed.deletedTasks) {
+        for (const dt of parsed.deletedTasks) {
+          if (dt.dateKey === undefined && dt.dayIndex !== undefined) {
+            const d = new Date(today);
+            d.setDate(today.getDate() + (dt.dayIndex - 2));
+            dt.dateKey = formatDateKey(d);
           }
         }
       }
@@ -270,22 +300,22 @@ function mergeStates(local: AppState | null, remote: AppState): AppState {
     && local.reflections.length === 0;
   if (emptyLocal) return remote;
 
-  // Merge tasks per day — union by id
-  const tasks: Record<number, Task[]> = {};
+  // Merge tasks — union by id across all date keys
+  // (cross-key dedup prevents duplicates when Supabase maps day_index to a different week)
+  const tasks: Record<string, Task[]> = {};
   const allDayKeys = new Set([...Object.keys(local.tasks), ...Object.keys(remote.tasks)]);
+  const seenGlobally = new Set<number>();
   for (const key of allDayKeys) {
-    const day = Number(key);
-    const localTasks = local.tasks[day] || [];
-    const remoteTasks = remote.tasks[day] || [];
-    const seen = new Set<number>();
+    const localTasks = local.tasks[key] || [];
+    const remoteTasks = remote.tasks[key] || [];
     const merged: Task[] = [];
     for (const t of [...localTasks, ...remoteTasks]) {
-      if (!seen.has(t.id)) {
-        seen.add(t.id);
+      if (!seenGlobally.has(t.id)) {
+        seenGlobally.add(t.id);
         merged.push(t);
       }
     }
-    tasks[day] = merged;
+    if (merged.length > 0) tasks[key] = merged;
   }
 
   // Merge overdue — union by id
@@ -370,28 +400,41 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
   }), 'motivation upsert');
 
   // Tasks per day — compute additions, removals, updates
-  for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
-    const oldTasks = oldState.tasks[dayIdx] || [];
-    const newTasks = newState.tasks[dayIdx] || [];
-    const oldIds = new Set(oldTasks.map((t) => t.id));
-    const newIds = new Set(newTasks.map((t) => t.id));
+  const allDateKeys = new Set([...Object.keys(oldState.tasks), ...Object.keys(newState.tasks)]);
 
-    const toDelete = oldTasks.filter((t) => !newIds.has(t.id)).map((t) => t.id);
-    if (toDelete.length > 0) {
-      await q(supabase.from('tasks').delete().in('id', toDelete).eq('user_id', userId), `tasks delete day ${dayIdx}`);
+  // Phase 1: all deletes (must run before inserts to handle cross-date-key moves)
+  const toDeleteAll: number[] = [];
+  for (const dateKey of allDateKeys) {
+    const oldTasks = oldState.tasks[dateKey] || [];
+    const newTasks = newState.tasks[dateKey] || [];
+    const newIds = new Set(newTasks.map((t) => t.id));
+    for (const t of oldTasks) {
+      if (!newIds.has(t.id)) toDeleteAll.push(t.id);
     }
+  }
+  if (toDeleteAll.length > 0) {
+    await q(supabase.from('tasks').delete().in('id', toDeleteAll).eq('user_id', userId), 'tasks delete');
+  }
+
+  // Phase 2: inserts and updates
+  for (const dateKey of allDateKeys) {
+    const oldTasks = oldState.tasks[dateKey] || [];
+    const newTasks = newState.tasks[dateKey] || [];
+    const oldIds = new Set(oldTasks.map((t) => t.id));
 
     const toInsert = newTasks.filter((t) => !oldIds.has(t.id));
     if (toInsert.length > 0) {
-      await q(supabase.from('tasks').insert(
-        toInsert.map((t) => ({ id: t.id, user_id: userId, day_index: dayIdx, text: t.text, status: t.status })),
-      ), `tasks insert day ${dayIdx}`);
+      const dayOfWeek = parseDateKey(dateKey).getDay();
+      await q(supabase.from('tasks').upsert(
+        toInsert.map((t) => ({ id: t.id, user_id: userId, day_index: dayOfWeek, text: t.text, status: t.status })),
+      ), `tasks upsert ${dateKey}`);
     }
 
     for (const t of newTasks.filter((t) => oldIds.has(t.id))) {
       const oldT = oldTasks.find((ot) => ot.id === t.id);
       if (oldT && (oldT.text !== t.text || oldT.status !== t.status)) {
-        await q(supabase.from('tasks').update({ text: t.text, status: t.status, day_index: dayIdx }).eq('id', t.id).eq('user_id', userId), `tasks update ${t.id}`);
+        const dayOfWeek = parseDateKey(dateKey).getDay();
+        await q(supabase.from('tasks').update({ text: t.text, status: t.status, day_index: dayOfWeek }).eq('id', t.id).eq('user_id', userId), `tasks update ${t.id}`);
       }
     }
   }
@@ -406,9 +449,9 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
     }
     const toInsert = newState.overdue.filter((o) => !oldIds.has(o.id));
     if (toInsert.length > 0) {
-      await q(supabase.from('overdue_tasks').insert(
+      await q(supabase.from('overdue_tasks').upsert(
         toInsert.map((o) => ({ id: o.id, user_id: userId, text: o.text, from_day: o.from })),
-      ), 'overdue insert');
+      ), 'overdue upsert');
     }
   }
 

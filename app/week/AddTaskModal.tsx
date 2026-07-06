@@ -6,12 +6,12 @@ import { useState } from 'react';
 
 interface AddTaskModalProps {
   isOpen: boolean;
-  dayIndex: number | null;
+  dayKey: string | null;
   onClose: () => void;
   onAdd: (text: string) => void;
 }
 
-export function AddTaskModal({ isOpen, dayIndex, onClose, onAdd }: AddTaskModalProps) {
+export function AddTaskModal({ isOpen, dayKey, onClose, onAdd }: AddTaskModalProps) {
   const [input, setInput] = useState('');
 
   const handleClose = () => {
@@ -31,7 +31,7 @@ export function AddTaskModal({ isOpen, dayIndex, onClose, onAdd }: AddTaskModalP
     if (e.key === 'Escape') handleClose();
   };
 
-  const dayName = dayIndex !== null ? DAYS[dayIndex] : 'Unknown';
+  const dayName = dayKey ? DAYS[new Date(dayKey).getDay()] : 'Unknown';
 
   return (
     <Modal isOpen={isOpen} title={`Set intention — ${dayName}`} onClose={handleClose}>

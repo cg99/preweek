@@ -26,7 +26,7 @@ export interface CompletedTask {
 export interface DeletedTask {
   id: number;
   text: string;
-  dayIndex: number;
+  dateKey: string; // "YYYY-MM-DD"
   status: Task['status'];
   deletedAt: number; // timestamp ms
 }
@@ -67,7 +67,7 @@ export interface Reflection {
 
 // --- Central App State ---
 export interface AppState {
-  tasks: Record<number, Task[]>; // Keyed by dayIndex (0-6)
+  tasks: Record<string, Task[]>; // Keyed by "YYYY-MM-DD"
   overdue: OverdueTask[];
   completed: CompletedTask[];
   deletedTasks: DeletedTask[];
@@ -93,15 +93,7 @@ export const STORAGE_KEY = 'preweekAppState';
 
 // --- Default State ---
 export const DEFAULT_APP_STATE: AppState = {
-  tasks: {
-    0: [],
-    1: [],
-    2: [],
-    3: [],
-    4: [],
-    5: [],
-    6: [],
-  },
+  tasks: {},
   overdue: [],
   completed: [],
   deletedTasks: [],

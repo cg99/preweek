@@ -105,14 +105,14 @@ export default function Home() {
     showToast('Signed out');
   };
 
-  const handleRestore = (task: { id: number; text: string; dayIndex: number; status: string }) => {
+  const handleRestore = (task: { id: number; text: string; dateKey: string; status: string }) => {
     if (!state) return;
     const newState = structuredClone(state);
     if (task.status === 'overdue' || task.status === 'rescheduled') {
       newState.overdue.push({ id: state.nextTaskId, text: task.text, from: 'restored' });
-    } else if (task.dayIndex >= 0) {
-      newState.tasks[task.dayIndex] = newState.tasks[task.dayIndex] || [];
-      newState.tasks[task.dayIndex].push({ id: state.nextTaskId, text: task.text, status: 'pending' });
+    } else if (task.dateKey) {
+      newState.tasks[task.dateKey] = newState.tasks[task.dateKey] || [];
+      newState.tasks[task.dateKey].push({ id: state.nextTaskId, text: task.text, status: 'pending' });
     }
     newState.deletedTasks = newState.deletedTasks.filter((t) => t.id !== task.id);
     newState.nextTaskId += 1;

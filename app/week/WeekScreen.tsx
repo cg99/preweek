@@ -15,13 +15,14 @@ function now() { return Date.now(); }
 
 export function WeekScreen() {
   const { state, setState } = useAppState();
-  const { today, todayDate, todayIdx, weekDates } = useWeekDates();
+  const { today, todayDate, todayKey, weekDates, weekDateKeys } = useWeekDates();
   const { show: showToast, toast, close } = useToast();
   const [showAddTask, setShowAddTask] = useState(false);
-  const [addTaskDay, setAddTaskDay] = useState<number | null>(null);
+  const [addTaskDayKey, setAddTaskDayKey] = useState<string | null>(null);
   const [reassignOverdueId, setReassignOverdueId] = useState<number | null>(null);
-  const [rescheduleTarget, setRescheduleTarget] = useState<{ taskId: number; dayIdx: number } | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<{ taskId: number; dayKey: string } | null>(null);
   const [editingMotivation, setEditingMotivation] = useState(false);
+  const [showIntentionPicker, setShowIntentionPicker] = useState(false);
   const [motivationDraft, setMotivationDraft] = useState('');
   const undoSnapshot = useRef<AppState | null>(null);
   const archivedRef = useRef(false);
@@ -29,26 +30,29 @@ export function WeekScreen() {
   // Auto-carry pending tasks from past days to overdue
   useEffect(() => {
     if (!state || archivedRef.current) return;
-    const pendingPast: { dayIdx: number; task: { id: number; text: string } }[] = [];
-    for (let i = 0; i < todayIdx; i++) {
-      for (const t of state.tasks[i] || []) {
+    const pendingPast: { dateKey: string; task: { id: number; text: string } }[] = [];
+    for (let i = 0; i < 2; i++) {
+      const dateKey = weekDateKeys[i];
+      for (const t of state.tasks[dateKey] || []) {
         if (t.status === 'pending') {
-          pendingPast.push({ dayIdx: i, task: { id: t.id, text: t.text } });
+          pendingPast.push({ dateKey, task: { id: t.id, text: t.text } });
         }
       }
     }
     if (pendingPast.length > 0) {
       const newState = structuredClone(state);
       for (const item of pendingPast) {
-        newState.overdue.push({ id: item.task.id, text: item.task.text, from: DAYS[item.dayIdx] });
-        for (let i = 0; i < 7; i++) {
-          newState.tasks[i] = (newState.tasks[i] || []).filter((t: { id: number }) => t.id !== item.task.id);
+        const dayName = DAYS[new Date(item.dateKey).getDay()];
+        newState.overdue.push({ id: newState.nextTaskId, text: item.task.text, from: dayName });
+        newState.nextTaskId += 1;
+        for (const dk of weekDateKeys) {
+          newState.tasks[dk] = (newState.tasks[dk] || []).filter((t: { id: number }) => t.id !== item.task.id);
         }
       }
       setState(newState);
       archivedRef.current = true;
     }
-  }, [state, todayIdx, setState]);
+  }, [state, weekDateKeys, setState]);
 
   if (!state) {
     return <div className="px-4 py-6">Loading...</div>;
@@ -64,19 +68,16 @@ export function WeekScreen() {
       ? `${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()}–${weekEnd.getDate()}, ${weekEnd.getFullYear()}`
       : `${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()} – ${MONTHS[weekEnd.getMonth()]} ${weekEnd.getDate()}, ${weekEnd.getFullYear()}`;
 
-  const dayNameFor = (dayIdx: number) => DAYS[weekDates[dayIdx].getDay()];
-
-  // Handle actions
-  const handleAddTask = (dayIdx: number) => {
-    setAddTaskDay(dayIdx);
+  const handleAddTask = (dayKey: string) => {
+    setAddTaskDayKey(dayKey);
     setShowAddTask(true);
   };
 
   const handleConfirmAddTask = (text: string) => {
-    if (!state || addTaskDay === null) return;
+    if (!state || !addTaskDayKey) return;
     const newState = structuredClone(state);
-    newState.tasks[addTaskDay] = newState.tasks[addTaskDay] || [];
-    newState.tasks[addTaskDay].push({
+    newState.tasks[addTaskDayKey] = newState.tasks[addTaskDayKey] || [];
+    newState.tasks[addTaskDayKey].push({
       id: state.nextTaskId,
       text,
       status: 'pending',
@@ -86,11 +87,11 @@ export function WeekScreen() {
     showToast('Intention set');
   };
 
-  const handleCompleteTask = (taskId: number, dayIdx: number) => {
+  const handleCompleteTask = (taskId: number, dayKey: string) => {
     if (!state) return;
     undoSnapshot.current = structuredClone(state);
     const newState = structuredClone(state);
-    const task = (newState.tasks[dayIdx] || []).find((t) => t.id === taskId);
+    const task = (newState.tasks[dayKey] || []).find((t) => t.id === taskId);
 
     if (task) {
       task.status = task.status === 'completed' ? 'pending' : 'completed';
@@ -100,17 +101,17 @@ export function WeekScreen() {
     }
   };
 
-  const handleDeleteTask = (taskId: number, dayIdx: number) => {
+  const handleDeleteTask = (taskId: number, dayKey: string) => {
     if (!state) return;
     undoSnapshot.current = structuredClone(state);
     const newState = structuredClone(state);
-    const task = (newState.tasks[dayIdx] || []).find((t) => t.id === taskId);
-    newState.tasks[dayIdx] = (newState.tasks[dayIdx] || []).filter(
+    const task = (newState.tasks[dayKey] || []).find((t) => t.id === taskId);
+    newState.tasks[dayKey] = (newState.tasks[dayKey] || []).filter(
       (t) => t.id !== taskId
     );
     if (task) {
       newState.deletedTasks = [
-        { id: task.id, text: task.text, dayIndex: dayIdx, status: task.status, deletedAt: now() },
+        { id: task.id, text: task.text, dateKey: dayKey, status: task.status, deletedAt: now() },
         ...newState.deletedTasks,
       ].slice(0, 50);
     }
@@ -125,8 +126,8 @@ export function WeekScreen() {
     const task = newState.overdue.find((t) => t.id === taskId);
 
     if (task) {
-      newState.tasks[todayIdx] = newState.tasks[todayIdx] || [];
-      newState.tasks[todayIdx].push({
+      newState.tasks[todayKey] = newState.tasks[todayKey] || [];
+      newState.tasks[todayKey].push({
         id: state.nextTaskId,
         text: task.text,
         status: 'pending',
@@ -152,43 +153,49 @@ export function WeekScreen() {
     setReassignOverdueId(taskId);
   };
 
-  const handleRescheduleTask = (taskId: number, dayIdx: number) => {
-    setRescheduleTarget({ taskId, dayIdx });
+  const handleRescheduleTask = (taskId: number, dayKey: string) => {
+    setRescheduleTarget({ taskId, dayKey });
   };
 
-  const handleDayPicked = (dayIndex: number) => {
+  const handleDayPicked = (dateKey: string) => {
     if (reassignOverdueId !== null) {
       if (!state) return;
       undoSnapshot.current = structuredClone(state);
       const task = state.overdue.find((t) => t.id === reassignOverdueId);
       if (!task) { setReassignOverdueId(null); return; }
       const newState = structuredClone(state);
-      newState.tasks[dayIndex] = newState.tasks[dayIndex] || [];
-      newState.tasks[dayIndex].push({ id: state.nextTaskId, text: task.text, status: 'pending' });
+      newState.tasks[dateKey] = newState.tasks[dateKey] || [];
+      newState.tasks[dateKey].push({ id: state.nextTaskId, text: task.text, status: 'pending' });
       newState.overdue = newState.overdue.filter((t) => t.id !== reassignOverdueId);
       newState.nextTaskId += 1;
       setState(newState);
-      showToast('Moved to ' + dayNameFor(dayIndex), undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
+      showToast('Moved to ' + DAYS[new Date(dateKey).getDay()], undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
       setReassignOverdueId(null);
     } else if (rescheduleTarget !== null) {
       if (!state) return;
       undoSnapshot.current = structuredClone(state);
       const newState = structuredClone(state);
-      const task = (newState.tasks[rescheduleTarget.dayIdx] || []).find((t) => t.id === rescheduleTarget.taskId);
+      const task = (newState.tasks[rescheduleTarget.dayKey] || []).find((t) => t.id === rescheduleTarget.taskId);
       if (!task) { setRescheduleTarget(null); return; }
-      newState.tasks[rescheduleTarget.dayIdx] = newState.tasks[rescheduleTarget.dayIdx].filter((t) => t.id !== rescheduleTarget.taskId);
-      newState.tasks[dayIndex] = newState.tasks[dayIndex] || [];
-      newState.tasks[dayIndex].push(task);
+      newState.tasks[rescheduleTarget.dayKey] = newState.tasks[rescheduleTarget.dayKey].filter((t) => t.id !== rescheduleTarget.taskId);
+      newState.tasks[dateKey] = newState.tasks[dateKey] || [];
+      newState.tasks[dateKey].push(task);
       setState(newState);
-      showToast('Moved to ' + dayNameFor(dayIndex), undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
+      showToast('Moved to ' + DAYS[new Date(dateKey).getDay()], undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
       setRescheduleTarget(null);
     }
   };
 
-  const handleEditTask = (dayIdx: number) => (taskId: number, text: string) => {
+  const handleIntentionDayPicked = (dateKey: string) => {
+    setAddTaskDayKey(dateKey);
+    setShowIntentionPicker(false);
+    setShowAddTask(true);
+  };
+
+  const handleEditTask = (dayKey: string) => (taskId: number, text: string) => {
     if (!state) return;
     const newState = structuredClone(state);
-    const tasks = newState.tasks[dayIdx] || [];
+    const tasks = newState.tasks[dayKey] || [];
     const task = tasks.find((t) => t.id === taskId);
     if (task) {
       task.text = text;
@@ -204,7 +211,7 @@ export function WeekScreen() {
     newState.overdue = newState.overdue.filter((t) => t.id !== taskId);
     if (task) {
       newState.deletedTasks = [
-        { id: task.id, text: task.text, dayIndex: -1, status: 'pending' as const, deletedAt: now() },
+        { id: task.id, text: task.text, dateKey: todayKey, status: 'pending' as const, deletedAt: now() },
         ...newState.deletedTasks,
       ].slice(0, 50);
     }
@@ -216,8 +223,16 @@ export function WeekScreen() {
     <section>
       {/* Header */}
       <div className="px-4 sm:px-6 pt-6 sm:pt-8 pb-4">
-        <div className="text-xs font-semibold tracking-widest text-secondary uppercase mb-2">
-          {rangeLabel}
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs font-semibold tracking-widest text-secondary uppercase">
+            {rangeLabel}
+          </div>
+          <button
+            onClick={() => setShowIntentionPicker(true)}
+            className="text-xs font-medium text-accent hover:text-accent-dark transition-colors flex items-center gap-1"
+          >
+            <span className="text-base leading-none">+</span> Set intention
+          </button>
         </div>
         {editingMotivation ? (
           <input
@@ -266,27 +281,92 @@ export function WeekScreen() {
 
         {/* Week Days */}
         <div className="space-y-3">
-          {weekDates.map((date, dayIdx) => {
-            const tasks = state.tasks[dayIdx] || [];
-            if (dayIdx < todayIdx && tasks.length === 0) return null;
+          {weekDates.map((date, i) => {
+            const dateKey = weekDateKeys[i];
+            const tasks = state.tasks[dateKey] || [];
+            if (i < 2 && tasks.length === 0) return null;
             return (
               <DayCard
-                key={dayIdx}
+                key={dateKey}
                 dayNumber={date.getDate()}
                 dayName={DAYS[date.getDay()]}
                 tasks={tasks}
-                isToday={dayIdx === todayIdx}
-                isPast={dayIdx < todayIdx}
-                onAddTask={() => handleAddTask(dayIdx)}
-                onCompleteTask={(id) => handleCompleteTask(id, dayIdx)}
-                onEditTask={handleEditTask(dayIdx)}
-                onRescheduleTask={(id) => handleRescheduleTask(id, dayIdx)}
-                onDeleteTask={(id) => handleDeleteTask(id, dayIdx)}
-                style={{ animation: `fade-in 0.3s ease-out ${dayIdx * 0.05}s both` }}
+                isToday={dateKey === todayKey}
+                isPast={i < 2}
+                onAddTask={() => handleAddTask(dateKey)}
+                onCompleteTask={(id) => handleCompleteTask(id, dateKey)}
+                onEditTask={handleEditTask(dateKey)}
+                onRescheduleTask={(id) => handleRescheduleTask(id, dateKey)}
+                onDeleteTask={(id) => handleDeleteTask(id, dateKey)}
+                style={{ animation: `fade-in 0.3s ease-out ${i * 0.05}s both` }}
               />
             );
           })}
         </div>
+
+        {/* Upcoming intentions (dates outside the current window) */}
+        {(() => {
+          const otherKeys = Object.keys(state.tasks).filter((k) => !weekDateKeys.includes(k)).sort();
+          if (otherKeys.length === 0) return null;
+          return (
+            <div className="space-y-3">
+              <div className="text-xs font-semibold tracking-widest text-tertiary uppercase pt-2">
+                Upcoming intentions
+              </div>
+              {otherKeys.map((dateKey) => {
+                const tasks = state.tasks[dateKey] || [];
+                if (tasks.length === 0) return null;
+                const d = new Date(dateKey);
+                return (
+                  <div
+                    key={dateKey}
+                    className="rounded-2xl border border-border-dim bg-card/50 p-4"
+                  >
+                    <div className="mb-3 flex items-baseline gap-3">
+                      <span className="text-3xl font-bold text-secondary">{d.getDate()}</span>
+                      <span className="text-xs font-semibold tracking-widest uppercase text-secondary">
+                        {DAYS[d.getDay()]} · {MONTHS[d.getMonth()]}
+                      </span>
+                    </div>
+                    <div className="space-y-0 border-t border-border-dim">
+                      {tasks.map((task) => (
+                        <div key={task.id} className="flex items-center gap-2 border-b border-border-dim py-3 last:border-b-0">
+                          <button
+                            onClick={() => handleCompleteTask(task.id, dateKey)}
+                            className={`h-5 w-5 flex-shrink-0 rounded-md border-2 transition-all ${
+                              task.status === 'completed'
+                                ? 'border-success bg-success'
+                                : 'border-border bg-card hover:border-success'
+                            }`}
+                          >
+                            {task.status === 'completed' && (
+                              <svg className="w-3 h-3 text-white mx-auto" fill="none" viewBox="0 0 12 12" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M2 6l3 3 5-5" />
+                              </svg>
+                            )}
+                          </button>
+                          <span className={`flex-1 text-sm ${task.status === 'completed' ? 'text-tertiary line-through' : 'text-foreground'}`}>
+                            {task.text}
+                          </span>
+                          <button
+                            onClick={() => handleRescheduleTask(task.id, dateKey)}
+                            className="rounded-md bg-muted px-2 py-1 text-xs text-secondary hover:bg-accent/10 hover:text-accent-dark"
+                            title="Move to another day"
+                          >↻</button>
+                          <button
+                            onClick={() => handleDeleteTask(task.id, dateKey)}
+                            className="rounded-md bg-muted px-2 py-1 text-xs text-secondary hover:bg-danger-light hover:text-danger"
+                            title="Delete"
+                          >✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* Carried Over (muted, lower priority) */}
         <OverdueSection
@@ -302,7 +382,7 @@ export function WeekScreen() {
       {/* Modals */}
       <AddTaskModal
         isOpen={showAddTask}
-        dayIndex={addTaskDay}
+        dayKey={addTaskDayKey}
         onClose={() => setShowAddTask(false)}
         onAdd={handleConfirmAddTask}
       />
@@ -312,6 +392,13 @@ export function WeekScreen() {
         title="Move to which day?"
         onSelect={handleDayPicked}
         onClose={() => { setReassignOverdueId(null); setRescheduleTarget(null); }}
+      />
+
+      <DayPickerModal
+        isOpen={showIntentionPicker}
+        title="Set intention for…"
+        onSelect={handleIntentionDayPicked}
+        onClose={() => setShowIntentionPicker(false)}
       />
 
       {/* Toast */}

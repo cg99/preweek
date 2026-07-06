@@ -1,5 +1,7 @@
 'use client';
 
+import { formatDateKey } from '@/lib/constants';
+
 export function useWeekDates() {
   const today = new Date();
 
@@ -10,10 +12,15 @@ export function useWeekDates() {
     return d;
   });
 
+  const weekDateKeys = weekDates.map(formatDateKey);
+  const todayKey = formatDateKey(today);
+
   return {
     today,
     todayIdx: 2,
     todayDate: today.getDate(),
+    todayKey,
     weekDates,
+    weekDateKeys,
   };
 }

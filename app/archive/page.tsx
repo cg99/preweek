@@ -2,15 +2,15 @@
 
 import Link from 'next/link';
 import { useAppState } from '@/app/hooks/useAppState';
-import { DAYS } from '@/lib/constants';
+import { DAYS, parseDateKey } from '@/lib/constants';
 
 export default function ArchivePage() {
   const { state } = useAppState();
 
   if (!state) return null;
 
-  const allTasks = Object.entries(state.tasks).flatMap(([dayIdx, tasks]) =>
-    tasks.map((t) => ({ ...t, day: DAYS[Number(dayIdx)] })),
+  const allTasks = Object.entries(state.tasks).flatMap(([dateKey, tasks]) =>
+    tasks.map((t) => ({ ...t, day: DAYS[parseDateKey(dateKey).getDay()] })),
   );
   const pending = allTasks.filter((t) => t.status === 'pending');
   const completed = allTasks.filter((t) => t.status === 'completed');
