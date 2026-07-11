@@ -1,6 +1,7 @@
 'use client';
 
 import { Modal } from '@/app/components/Modal';
+import { CalendarPicker } from '@/app/components/CalendarPicker';
 import { useState } from 'react';
 
 interface AddGoalModalProps {
@@ -13,9 +14,10 @@ export function AddGoalModal({ isOpen, onClose, onAdd }: AddGoalModalProps) {
   const [title, setTitle] = useState('');
   const [emoji, setEmoji] = useState('');
   const [deadline, setDeadline] = useState('');
+  const [showCalendar, setShowCalendar] = useState(false);
 
   const handleClose = () => {
-    setTitle(''); setEmoji(''); setDeadline('');
+    setTitle(''); setEmoji(''); setDeadline(''); setShowCalendar(false);
     onClose();
   };
 
@@ -25,6 +27,7 @@ export function AddGoalModal({ isOpen, onClose, onAdd }: AddGoalModalProps) {
     setTitle('');
     setEmoji('');
     setDeadline('');
+    setShowCalendar(false);
     onClose();
   };
 
@@ -55,14 +58,42 @@ export function AddGoalModal({ isOpen, onClose, onAdd }: AddGoalModalProps) {
           className="w-full border-b-2 border-accent bg-transparent pb-2 text-sm placeholder-tertiary outline-none text-foreground"
         />
 
-        <input
-          type="text"
-          value={deadline}
-          onChange={(e) => setDeadline(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Deadline (e.g. Dec 2026)"
-          className="w-full border-b-2 border-accent bg-transparent pb-2 text-sm placeholder-tertiary outline-none text-foreground"
-        />
+        <div>
+          {showCalendar ? (
+            <div className="space-y-2">
+              <CalendarPicker
+                onSelect={(dateKey) => {
+                  const d = new Date(dateKey);
+                  setDeadline(d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+                  setShowCalendar(false);
+                }}
+              />
+              <button
+                onClick={() => setShowCalendar(false)}
+                className="text-xs text-secondary hover:text-foreground transition-colors"
+              >
+                Enter manually instead
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Deadline (e.g. Dec 2026)"
+                className="flex-1 border-b-2 border-accent bg-transparent pb-2 text-sm placeholder-tertiary outline-none text-foreground"
+              />
+              <button
+                onClick={() => setShowCalendar(true)}
+                className="shrink-0 rounded-lg bg-muted px-3 py-1 text-xs text-secondary hover:text-foreground hover:bg-muted-hover transition-colors"
+              >
+                📅
+              </button>
+            </div>
+          )}
+        </div>
 
         <div className="flex gap-3 pt-4">
           <button

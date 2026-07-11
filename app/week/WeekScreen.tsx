@@ -3,56 +3,29 @@
 import { useAppState } from '@/app/hooks/useAppState';
 import { useWeekDates } from '@/app/hooks/useWeekDates';
 import { MONTHS, QUOTES, DAYS } from '@/lib/constants';
-import { AppState } from '@/lib/appState';
-import { useToast, ToastDisplay } from '@/app/components/Toast';
+import { AppState, generateOfflineId } from '@/lib/appState';
+import { useToast } from '@/app/providers/ToastProvider';
 import { OverdueSection } from './OverdueSection';
 import { DayCard } from './DayCard';
 import { AddTaskModal } from './AddTaskModal';
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState } from 'react';
 import { DayPickerModal } from './DayPickerModal';
+import { MiniCalendar } from '@/app/components/MiniCalendar';
 
 function now() { return Date.now(); }
 
 export function WeekScreen() {
   const { state, setState } = useAppState();
-  const { today, todayDate, todayKey, weekDates, weekDateKeys } = useWeekDates();
-  const { show: showToast, toast, close } = useToast();
+  const { show: showToast } = useToast();
   const [showAddTask, setShowAddTask] = useState(false);
   const [addTaskDayKey, setAddTaskDayKey] = useState<string | null>(null);
   const [reassignOverdueId, setReassignOverdueId] = useState<number | null>(null);
   const [rescheduleTarget, setRescheduleTarget] = useState<{ taskId: number; dayKey: string } | null>(null);
   const [editingMotivation, setEditingMotivation] = useState(false);
-  const [showIntentionPicker, setShowIntentionPicker] = useState(false);
   const [motivationDraft, setMotivationDraft] = useState('');
+  const [weekOffset, setWeekOffset] = useState(0);
+  const { today, todayDate, todayKey, weekDates, weekDateKeys } = useWeekDates(weekOffset);
   const undoSnapshot = useRef<AppState | null>(null);
-  const archivedRef = useRef(false);
-
-  // Auto-carry pending tasks from past days to overdue
-  useEffect(() => {
-    if (!state || archivedRef.current) return;
-    const pendingPast: { dateKey: string; task: { id: number; text: string } }[] = [];
-    for (let i = 0; i < 2; i++) {
-      const dateKey = weekDateKeys[i];
-      for (const t of state.tasks[dateKey] || []) {
-        if (t.status === 'pending') {
-          pendingPast.push({ dateKey, task: { id: t.id, text: t.text } });
-        }
-      }
-    }
-    if (pendingPast.length > 0) {
-      const newState = structuredClone(state);
-      for (const item of pendingPast) {
-        const dayName = DAYS[new Date(item.dateKey).getDay()];
-        newState.overdue.push({ id: newState.nextTaskId, text: item.task.text, from: dayName });
-        newState.nextTaskId += 1;
-        for (const dk of weekDateKeys) {
-          newState.tasks[dk] = (newState.tasks[dk] || []).filter((t: { id: number }) => t.id !== item.task.id);
-        }
-      }
-      setState(newState);
-      archivedRef.current = true;
-    }
-  }, [state, weekDateKeys, setState]);
 
   if (!state) {
     return <div className="px-4 py-6">Loading...</div>;
@@ -78,11 +51,10 @@ export function WeekScreen() {
     const newState = structuredClone(state);
     newState.tasks[addTaskDayKey] = newState.tasks[addTaskDayKey] || [];
     newState.tasks[addTaskDayKey].push({
-      id: state.nextTaskId,
+      id: generateOfflineId(),
       text,
       status: 'pending',
     });
-    newState.nextTaskId += 1;
     setState(newState);
     showToast('Intention set');
   };
@@ -128,13 +100,12 @@ export function WeekScreen() {
     if (task) {
       newState.tasks[todayKey] = newState.tasks[todayKey] || [];
       newState.tasks[todayKey].push({
-        id: state.nextTaskId,
+        id: generateOfflineId(),
         text: task.text,
         status: 'pending',
       });
 
       newState.overdue = newState.overdue.filter((t) => t.id !== taskId);
-      newState.nextTaskId += 1;
       setState(newState);
       showToast('Moved to today ✓', undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
     }
@@ -165,9 +136,8 @@ export function WeekScreen() {
       if (!task) { setReassignOverdueId(null); return; }
       const newState = structuredClone(state);
       newState.tasks[dateKey] = newState.tasks[dateKey] || [];
-      newState.tasks[dateKey].push({ id: state.nextTaskId, text: task.text, status: 'pending' });
+      newState.tasks[dateKey].push({ id: generateOfflineId(), text: task.text, status: 'pending' });
       newState.overdue = newState.overdue.filter((t) => t.id !== reassignOverdueId);
-      newState.nextTaskId += 1;
       setState(newState);
       showToast('Moved to ' + DAYS[new Date(dateKey).getDay()], undefined, () => undoSnapshot.current && setState(undoSnapshot.current));
       setReassignOverdueId(null);
@@ -188,7 +158,6 @@ export function WeekScreen() {
 
   const handleIntentionDayPicked = (dateKey: string) => {
     setAddTaskDayKey(dateKey);
-    setShowIntentionPicker(false);
     setShowAddTask(true);
   };
 
@@ -223,16 +192,18 @@ export function WeekScreen() {
     <section>
       {/* Header */}
       <div className="px-4 sm:px-6 pt-6 sm:pt-8 pb-4">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 mb-2">
           <div className="text-xs font-semibold tracking-widest text-secondary uppercase">
             {rangeLabel}
           </div>
-          <button
-            onClick={() => setShowIntentionPicker(true)}
-            className="text-xs font-medium text-accent hover:text-accent-dark transition-colors flex items-center gap-1"
-          >
-            <span className="text-base leading-none">+</span> Set intention
-          </button>
+          {weekOffset !== 0 && (
+            <button
+              onClick={() => setWeekOffset(0)}
+              className="text-xs font-medium text-accent hover:text-accent-dark transition-colors"
+            >
+              Today
+            </button>
+          )}
         </div>
         {editingMotivation ? (
           <input
@@ -272,11 +243,41 @@ export function WeekScreen() {
         </div>
       </div>
 
+      {/* Mini Calendar */}
+      <div className="px-4 sm:px-6 pb-4">
+        <MiniCalendar
+          onSelect={handleIntentionDayPicked}
+          taskDateKeys={new Set(Object.keys(state.tasks).filter(k => (state.tasks[k] || []).length > 0))}
+        />
+      </div>
+
       {/* Content Area */}
       <div className="px-4 sm:px-6 pb-6 space-y-4">
         {/* Section Label */}
-        <div className="text-xs font-semibold tracking-widest text-secondary uppercase">
-          This cycle
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-semibold tracking-widest text-secondary uppercase">
+            This cycle
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => setWeekOffset(o => o - 1)}
+              className="h-6 w-6 rounded-lg text-secondary hover:text-foreground hover:bg-muted transition-colors flex items-center justify-center"
+              title="Previous week"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="2">
+                <path d="M4 10l4-4 4 4" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setWeekOffset(o => o + 1)}
+              className="h-6 w-6 rounded-lg text-secondary hover:text-foreground hover:bg-muted transition-colors flex items-center justify-center"
+              title="Next week"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 16 16" stroke="currentColor" strokeWidth="2">
+                <path d="M4 6l4 4 4-4" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Week Days */}
@@ -394,15 +395,6 @@ export function WeekScreen() {
         onClose={() => { setReassignOverdueId(null); setRescheduleTarget(null); }}
       />
 
-      <DayPickerModal
-        isOpen={showIntentionPicker}
-        title="Set intention for…"
-        onSelect={handleIntentionDayPicked}
-        onClose={() => setShowIntentionPicker(false)}
-      />
-
-      {/* Toast */}
-      <ToastDisplay toast={toast} onClose={close} />
     </section>
   );
 }

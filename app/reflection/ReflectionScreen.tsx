@@ -2,15 +2,16 @@
 
 import { useAppState } from '@/app/hooks/useAppState';
 import { useWeekDates } from '@/app/hooks/useWeekDates';
-import { useToast, ToastDisplay } from '@/app/components/Toast';
+import { useToast } from '@/app/providers/ToastProvider';
 import { Modal } from '@/app/components/Modal';
 import { useState } from 'react';
 
 export function ReflectionScreen() {
   const { state, setState } = useAppState();
   const { weekDates } = useWeekDates();
-  const { show: showToast, toast, close } = useToast();
+  const { show: showToast } = useToast();
   const [showModal, setShowModal] = useState(false);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [well, setWell] = useState('');
   const [improve, setImprove] = useState('');
   const [win, setWin] = useState('');
@@ -30,11 +31,29 @@ export function ReflectionScreen() {
   const hasSubmitted = state.reflections.some((r) => r.week === currentWeekLabel);
 
   const handleOpen = () => {
+    setEditingIdx(null);
     setWell('');
     setImprove('');
     setWin('');
     setFocus('');
     setShowModal(true);
+  };
+
+  const handleEdit = (idx: number) => {
+    const r = state.reflections[idx];
+    setEditingIdx(idx);
+    setWell(r.well);
+    setImprove(r.improve);
+    setWin(r.win);
+    setFocus(r.focus);
+    setShowModal(true);
+  };
+
+  const handleDelete = (idx: number) => {
+    const newState = structuredClone(state);
+    newState.reflections.splice(idx, 1);
+    setState(newState);
+    showToast('Reflection removed');
   };
 
   const handleSave = () => {
@@ -44,7 +63,12 @@ export function ReflectionScreen() {
     }
 
     const newState = structuredClone(state);
-    newState.reflections.unshift({ week: currentWeekLabel, well, improve, win, focus });
+    if (editingIdx !== null) {
+      const r = newState.reflections[editingIdx];
+      if (r) { r.well = well; r.improve = improve; r.win = win; r.focus = focus; }
+    } else {
+      newState.reflections.unshift({ week: currentWeekLabel, well, improve, win, focus });
+    }
     setState(newState);
 
     setWell('');
@@ -52,7 +76,7 @@ export function ReflectionScreen() {
     setWin('');
     setFocus('');
     setShowModal(false);
-    showToast('Reflection saved');
+    showToast(editingIdx !== null ? 'Reflection updated' : 'Reflection saved');
   };
 
   return (
@@ -104,8 +128,20 @@ export function ReflectionScreen() {
                   key={i}
                   className="rounded-2xl border border-border bg-card p-5"
                 >
-                  <div className="text-xs font-semibold tracking-widest text-secondary uppercase mb-3">
-                    {r.week}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-xs font-semibold tracking-widest text-secondary uppercase">
+                      {r.week}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEdit(i)}
+                        className="text-xs text-secondary hover:text-foreground transition-colors"
+                      >✎</button>
+                      <button
+                        onClick={() => handleDelete(i)}
+                        className="text-xs text-tertiary hover:text-danger transition-colors"
+                      >✕</button>
+                    </div>
                   </div>
                   <div className="space-y-3 text-sm text-foreground">
                     {r.well && (
@@ -141,7 +177,7 @@ export function ReflectionScreen() {
       </div>
 
       {/* Reflection Modal */}
-      <Modal isOpen={showModal} title={currentWeekLabel} onClose={() => setShowModal(false)}>
+      <Modal isOpen={showModal} title={editingIdx !== null ? 'Edit reflection' : currentWeekLabel} onClose={() => setShowModal(false)}>
         <div className="space-y-4">
           <div>
             <div className="text-xs font-semibold tracking-widest text-secondary uppercase mb-2">✦ What went well?</div>
@@ -191,13 +227,11 @@ export function ReflectionScreen() {
               onClick={handleSave}
               className="flex-1 rounded-xl bg-accent py-3 font-medium text-white hover:bg-accent-dark transition-colors"
             >
-              Save reflection
+              {editingIdx !== null ? 'Update' : 'Save reflection'}
             </button>
           </div>
         </div>
       </Modal>
-
-      <ToastDisplay toast={toast} onClose={close} />
     </section>
   );
 }

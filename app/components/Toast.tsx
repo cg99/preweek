@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ToastProps {
   message: string;
@@ -48,22 +48,4 @@ export function ToastDisplay({ toast, onClose }: { toast: ToastProps | null; onC
       </div>
     </div>
   );
-}
-
-export function useToast() {
-  const [toast, setToast] = useState<ToastProps | null>(null);
-  const actionRef = useRef<(() => void) | null>(null);
-
-  const show = useCallback((message: string, duration?: number, onUndo?: () => void) => {
-    actionRef.current = onUndo || null;
-    setToast({
-      message,
-      duration: onUndo ? 5000 : (duration || 2000),
-      action: onUndo ? { label: 'Undo', onClick: () => { actionRef.current?.(); actionRef.current = null; } } : undefined,
-    });
-  }, []);
-
-  const close = useCallback(() => setToast(null), []);
-
-  return { show, toast, close };
 }

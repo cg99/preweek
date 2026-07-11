@@ -2,13 +2,13 @@
 
 import { formatDateKey } from '@/lib/constants';
 
-export function useWeekDates() {
+export function useWeekDates(offset = 0) {
   const today = new Date();
 
-  // Window: [today-2, today-1, today, today+1, ..., today+4]
+  // Window: [today-2, today-1, today, today+1, ..., today+4], shifted by offset weeks
   const weekDates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
-    d.setDate(today.getDate() + (i - 2));
+    d.setDate(today.getDate() + (i - 2) + offset * 7);
     return d;
   });
 

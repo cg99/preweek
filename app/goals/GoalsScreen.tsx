@@ -1,7 +1,8 @@
 'use client';
 
 import { useAppState } from '@/app/hooks/useAppState';
-import { useToast, ToastDisplay } from '@/app/components/Toast';
+import { useToast } from '@/app/providers/ToastProvider';
+import { generateOfflineId } from '@/lib/appState';
 import { GoalCard } from './GoalCard';
 import { AddGoalModal } from './AddGoalModal';
 import { EditGoalModal } from './EditGoalModal';
@@ -9,7 +10,7 @@ import { useState } from 'react';
 
 export function GoalsScreen() {
   const { state, setState } = useAppState();
-  const { show: showToast, toast, close } = useToast();
+  const { show: showToast } = useToast();
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<number | null>(null);
 
@@ -52,7 +53,7 @@ export function GoalsScreen() {
     if (!state) return;
     const newState = structuredClone(state);
     newState.goals.push({
-      id: state.nextGoalId,
+      id: generateOfflineId(),
       emoji,
       title,
       progress: 0,
@@ -60,7 +61,6 @@ export function GoalsScreen() {
       notes: '',
       milestones: [],
     });
-    newState.nextGoalId += 1;
     setState(newState);
     showToast('Aspiration added');
   };
@@ -153,8 +153,6 @@ export function GoalsScreen() {
         onSave={handleEditGoal}
       />
 
-      {/* Toast */}
-      <ToastDisplay toast={toast} onClose={close} />
     </section>
   );
 }

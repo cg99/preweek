@@ -4,8 +4,8 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { useAppState } from '@/app/hooks/useAppState';
 import { Modal } from '@/app/components/Modal';
-import { useToast, ToastDisplay } from '@/app/components/Toast';
-import { DEFAULT_APP_STATE } from '@/lib/appState';
+import { useToast } from '@/app/providers/ToastProvider';
+import { DEFAULT_APP_STATE, generateOfflineId } from '@/lib/appState';
 import { WeekScreen } from '@/app/week/WeekScreen';
 import { GoalsScreen } from '@/app/goals/GoalsScreen';
 import { HabitsScreen } from '@/app/habits/HabitsScreen';
@@ -30,7 +30,7 @@ export default function Home() {
   const { state, setState, session, signIn, signUp, signOut, resetPassword, syncError, clearSyncError } = useAppState();
   const [showSettings, setShowSettings] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const { show: showToast, toast, close } = useToast();
+  const { show: showToast } = useToast();
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
@@ -40,12 +40,9 @@ export default function Home() {
   const [showInsights, setShowInsights] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
 
-  useEffect(() => {
-    if (syncError) {
-      showToast(syncError);
-      clearSyncError();
-    }
-  }, [syncError, clearSyncError, showToast]);
+  const [dismissedBanner, setDismissedBanner] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { if (syncError) setDismissedBanner(false); }, [syncError]);
 
   // Prune deleted tasks older than 24 hours
   useEffect(() => {
@@ -59,11 +56,13 @@ export default function Home() {
   }, [showSettings]);
 
   useEffect(() => {
+    if (!state) return;
     const root = document.documentElement;
-    root.classList.toggle('dark', state?.settings.theme === 'dark');
+    root.classList.toggle('dark', state.settings.theme === 'dark');
     for (const t of ['theme-sage', 'theme-sky', 'theme-rose', 'theme-slate']) {
-      root.classList.toggle(t, state?.settings.colorTheme === t.replace('theme-', ''));
+      root.classList.toggle(t, state.settings.colorTheme === t.replace('theme-', ''));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.settings.theme, state?.settings.colorTheme]);
 
   if (!state) return null;
@@ -109,13 +108,12 @@ export default function Home() {
     if (!state) return;
     const newState = structuredClone(state);
     if (task.status === 'overdue' || task.status === 'rescheduled') {
-      newState.overdue.push({ id: state.nextTaskId, text: task.text, from: 'restored' });
+      newState.overdue.push({ id: generateOfflineId(), text: task.text, from: 'restored' });
     } else if (task.dateKey) {
       newState.tasks[task.dateKey] = newState.tasks[task.dateKey] || [];
-      newState.tasks[task.dateKey].push({ id: state.nextTaskId, text: task.text, status: 'pending' });
+      newState.tasks[task.dateKey].push({ id: generateOfflineId(), text: task.text, status: 'pending' });
     }
     newState.deletedTasks = newState.deletedTasks.filter((t) => t.id !== task.id);
-    newState.nextTaskId += 1;
     setState(newState);
     showToast('Intention restored');
   };
@@ -161,6 +159,19 @@ export default function Home() {
           <path d="M2 4h12M2 8h12M2 12h12" />
         </svg>
       </button>
+
+      {/* Offline banner */}
+      {syncError && !dismissedBanner && (
+        <div className="fixed top-4 left-4 right-4 z-50 flex items-center gap-3 rounded-xl bg-warning/90 backdrop-blur-sm px-4 py-2.5 text-sm text-white shadow-lg max-w-md mx-auto">
+          <span className="flex-1">{syncError}</span>
+          <button
+            onClick={() => { setDismissedBanner(true); clearSyncError(); }}
+            className="shrink-0 rounded-lg bg-white/20 px-2 py-1 text-xs font-medium hover:bg-white/30 transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <WeekScreen />
 
@@ -481,7 +492,6 @@ export default function Home() {
         </div>
       </Modal>
 
-      <ToastDisplay toast={toast} onClose={close} />
     </div>
   );
 }

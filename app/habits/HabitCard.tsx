@@ -15,17 +15,43 @@ interface HabitCardProps {
 export function HabitCard({ habit, todayIdx, onToggleDay, onEdit, onDelete }: HabitCardProps) {
   const [showMenu, setShowMenu] = useState(false);
 
+  const doneCount = habit.log.filter((v) => v === 1).length;
+  const weekCompletion = Math.round((doneCount / (todayIdx + 1)) * 100);
+
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
       {/* Header */}
       <div className="mb-4 flex items-center gap-3">
         <span className="text-2xl">{habit.icon}</span>
-        <div className="flex-1">
-          <h3 className="font-semibold text-foreground">{habit.name}</h3>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-foreground truncate">{habit.name}</h3>
         </div>
-        <span className="text-sm font-medium text-warning">
-          ✦ {habit.streak} day streak
-        </span>
+
+        {/* Streak badge */}
+        <div className="flex items-center gap-3 mr-1">
+          {/* Weekly completion ring */}
+          <div className="relative h-8 w-8">
+            <svg className="h-8 w-8 -rotate-90" viewBox="0 0 32 32">
+              <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" className="text-border" strokeWidth="3" />
+              <circle
+                cx="16" cy="16" r="13" fill="none"
+                stroke="currentColor"
+                className="text-success"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={`${(weekCompletion / 100) * 81.68} 81.68`}
+              />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-foreground">
+              {weekCompletion > 0 ? weekCompletion : ''}
+            </span>
+          </div>
+
+          <span className="text-sm font-medium text-warning whitespace-nowrap">
+            ✦ {habit.streak}d
+          </span>
+        </div>
+
         <div className="relative">
           <button
             onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
@@ -66,33 +92,35 @@ export function HabitCard({ habit, todayIdx, onToggleDay, onEdit, onDelete }: Ha
       </div>
 
       {/* 7-Day Grid */}
-      <div className="grid grid-cols-7 gap-3">
+      <div className="grid grid-cols-7 gap-2">
         {DAYS_SHORT.map((dayLabel, dayIdx) => {
           const done = habit.log[dayIdx] === 1;
           const isToday = dayIdx === todayIdx;
           const isFuture = dayIdx > todayIdx;
 
           return (
-            <div key={dayIdx} className="flex flex-col items-center gap-2">
-              <span className="text-xs font-semibold tracking-widest text-secondary uppercase">
+            <div key={dayIdx} className="flex flex-col items-center gap-1.5">
+              <span className={`text-[11px] font-semibold tracking-widest uppercase ${
+                isToday ? 'text-accent' : 'text-secondary'
+              }`}>
                 {dayLabel}
               </span>
               {isFuture ? (
-                <div className="h-9 w-9 rounded-full flex items-center justify-center">
+                <div className="h-10 w-10 rounded-full flex items-center justify-center">
                   <div className="h-2 w-2 rounded-full bg-border" />
                 </div>
               ) : (
                 <button
                   onClick={() => onToggleDay(habit.id, dayIdx)}
-                  className={`h-9 w-9 rounded-full flex items-center justify-center font-semibold transition-all duration-200 ${
+                  className={`h-10 w-10 rounded-full flex items-center justify-center font-semibold text-sm transition-all duration-200 active:scale-90 ${
                     done
-                      ? 'bg-success text-white scale-100'
+                      ? 'bg-success text-white shadow-sm'
                       : isToday
-                        ? 'border-2 border-accent bg-card'
-                        : 'border border-border bg-card hover:bg-muted hover:scale-110'
+                        ? 'border-2 border-accent bg-card hover:bg-accent/10'
+                        : 'border border-border bg-card hover:bg-muted hover:border-accent-dim'
                   }`}
                 >
-                  {done && <span className="animate-pop">✓</span>}
+                  {done ? '✓' : ''}
                 </button>
               )}
             </div>

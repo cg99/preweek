@@ -92,6 +92,14 @@ export interface AppState {
 export const STORAGE_KEY = 'preweekAppState';
 
 // --- Default State ---
+export function generateOfflineId(): number {
+  // Use a timestamp-based number in the safe JS integer range to avoid
+  // collisions during offline or cross-device ID generation.
+  const now = Date.now();
+  const counter = Math.floor(Math.random() * 1000);
+  return now * 1000 + counter;
+}
+
 export const DEFAULT_APP_STATE: AppState = {
   tasks: {},
   overdue: [],

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_APP_STATE, STORAGE_KEY } from '@/lib/appState';
+import { DEFAULT_APP_STATE, STORAGE_KEY, generateOfflineId } from '@/lib/appState';
 
 describe('appState', () => {
   it('STORAGE_KEY is set', () => {
@@ -16,9 +16,8 @@ describe('appState', () => {
     expect(state.reflections).toBeDefined();
   });
 
-  it('tasks are keyed by 0-6', () => {
-    const keys = Object.keys(DEFAULT_APP_STATE.tasks).map(Number);
-    expect(keys.every((k) => k >= 0 && k <= 6)).toBe(true);
+  it('tasks default to an empty date-keyed map', () => {
+    expect(Object.keys(DEFAULT_APP_STATE.tasks)).toHaveLength(0);
   });
 
   it('goals have correct structure', () => {
@@ -49,10 +48,20 @@ describe('appState', () => {
     expect(DEFAULT_APP_STATE.nextHabitId).toBeGreaterThan(0);
   });
 
+  it('generateOfflineId produces unique positive IDs', () => {
+    const ids = new Set<number>();
+    for (let i = 0; i < 10; i++) {
+      const id = generateOfflineId();
+      expect(id).toBeGreaterThan(0);
+      expect(ids.has(id)).toBe(false);
+      ids.add(id);
+    }
+  });
+
   it('deep cloning preserves structure', () => {
     const clone = structuredClone(DEFAULT_APP_STATE);
     expect(clone).toEqual(DEFAULT_APP_STATE);
-    clone.tasks[1].push({ id: 999, text: 'test', status: 'pending' });
-    expect(DEFAULT_APP_STATE.tasks[1]).toHaveLength(0); // original unchanged
+    clone.tasks['2025-01-01'] = [{ id: 999, text: 'test', status: 'pending' }];
+    expect(DEFAULT_APP_STATE.tasks['2025-01-01']).toBeUndefined();
   });
 });

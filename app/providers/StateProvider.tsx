@@ -5,6 +5,8 @@ import { createClient } from '@/lib/supabase/client';
 import type { AppState, Task, OverdueTask, Goal, Habit, Reflection } from '@/lib/appState';
 import { DEFAULT_APP_STATE, STORAGE_KEY } from '@/lib/appState';
 import { formatDateKey, parseDateKey } from '@/lib/constants';
+import { mergeStates as mergeAppStates } from '@/lib/sync';
+import { applyAutoCarry } from '@/lib/applyAutoCarry';
 
 type SyncStatus = 'idle' | 'syncing' | 'error';
 
@@ -141,12 +143,16 @@ async function loadFullState(userId: string): Promise<AppState | null> {
   }
 
   const tasks: Record<string, Task[]> = {};
-  const today = new Date();
-  const sunday = today.getDate() - today.getDay();
   for (const t of tasksData) {
-    const d = new Date(today);
-    d.setDate(sunday + t.day_index);
-    const dateKey = formatDateKey(d);
+    let dateKey: string;
+    if (t.date_key) {
+      dateKey = t.date_key as string;
+    } else {
+      const today = new Date();
+      const d = new Date(today);
+      d.setDate(today.getDate() - today.getDay() + t.day_index);
+      dateKey = formatDateKey(d);
+    }
     tasks[dateKey] = tasks[dateKey] || [];
     tasks[dateKey].push({ id: t.id, text: t.text, status: t.status });
   }
@@ -253,13 +259,18 @@ function loadLocalState(): AppState | null {
         }
       }
       // Migrate old numeric-keyed tasks to date keys
-      if (parsed.tasks && typeof Object.keys(parsed.tasks)[0] !== 'string') {
+      if (parsed.tasks && Object.keys(parsed.tasks).some((key) => /^\d+$/.test(key))) {
         const oldTasks: Record<string, Task[]> = {};
-        for (let i = 0; i < 7; i++) {
-          if (parsed.tasks[i] && parsed.tasks[i].length > 0) {
-            const d = new Date(today);
-            d.setDate(today.getDate() + (i - 2));
-            oldTasks[formatDateKey(d)] = parsed.tasks[i];
+        for (const [key, value] of Object.entries(parsed.tasks)) {
+          if (/^\d+$/.test(key)) {
+            const numericKey = Number(key);
+            if (Number.isFinite(numericKey)) {
+              const d = new Date(today);
+              d.setDate(today.getDate() + (numericKey - 2));
+              oldTasks[formatDateKey(d)] = value as Task[];
+            }
+          } else {
+            oldTasks[key] = value as Task[];
           }
         }
         parsed.tasks = oldTasks;
@@ -291,85 +302,6 @@ function saveLocalState(state: AppState) {
   }
 }
 
-function mergeStates(local: AppState | null, remote: AppState): AppState {
-  if (!local) return remote;
-  const emptyLocal = Object.values(local.tasks).every((t) => t.length === 0)
-    && local.overdue.length === 0
-    && local.goals.length === 0
-    && local.habits.length === 0
-    && local.reflections.length === 0;
-  if (emptyLocal) return remote;
-
-  // Merge tasks — union by id across all date keys
-  // (cross-key dedup prevents duplicates when Supabase maps day_index to a different week)
-  const tasks: Record<string, Task[]> = {};
-  const allDayKeys = new Set([...Object.keys(local.tasks), ...Object.keys(remote.tasks)]);
-  const seenGlobally = new Set<number>();
-  for (const key of allDayKeys) {
-    const localTasks = local.tasks[key] || [];
-    const remoteTasks = remote.tasks[key] || [];
-    const merged: Task[] = [];
-    for (const t of [...localTasks, ...remoteTasks]) {
-      if (!seenGlobally.has(t.id)) {
-        seenGlobally.add(t.id);
-        merged.push(t);
-      }
-    }
-    if (merged.length > 0) tasks[key] = merged;
-  }
-
-  // Merge overdue — union by id
-  const overdueIds = new Set<number>();
-  const overdue: OverdueTask[] = [];
-  for (const o of [...local.overdue, ...remote.overdue]) {
-    if (!overdueIds.has(o.id)) {
-      overdueIds.add(o.id);
-      overdue.push(o);
-    }
-  }
-
-  // Merge goals — union by id
-  const goalIds = new Set<number>();
-  const goals: Goal[] = [];
-  for (const g of [...local.goals, ...remote.goals]) {
-    if (!goalIds.has(g.id)) {
-      goalIds.add(g.id);
-      goals.push(g);
-    }
-  }
-
-  // Merge habits — union by id
-  const habitIds = new Set<number>();
-  const habits: Habit[] = [];
-  for (const h of [...local.habits, ...remote.habits]) {
-    if (!habitIds.has(h.id)) {
-      habitIds.add(h.id);
-      habits.push(h);
-    }
-  }
-
-  // Merge reflections — union by week
-  const reflectionWeeks = new Set<string>();
-  const reflections: Reflection[] = [];
-  for (const r of [...local.reflections, ...remote.reflections]) {
-    if (!reflectionWeeks.has(r.week)) {
-      reflectionWeeks.add(r.week);
-      reflections.push(r);
-    }
-  }
-
-  return {
-    ...local,
-    tasks,
-    overdue,
-    goals,
-    habits,
-    reflections,
-    nextTaskId: Math.max(local.nextTaskId, remote.nextTaskId),
-    nextGoalId: Math.max(local.nextGoalId, remote.nextGoalId),
-    nextHabitId: Math.max(local.nextHabitId, remote.nextHabitId),
-  };
-}
 
 async function syncDelta(oldState: AppState, newState: AppState, userId: string) {
   const supabase = createClient();
@@ -399,59 +331,59 @@ async function syncDelta(oldState: AppState, newState: AppState, userId: string)
     updated_at: new Date().toISOString(),
   }), 'motivation upsert');
 
-  // Tasks per day — compute additions, removals, updates
-  const allDateKeys = new Set([...Object.keys(oldState.tasks), ...Object.keys(newState.tasks)]);
+  // Tasks + Overdue — compute diffs once, try atomic RPC, fall back to sequential
+  const oldTaskIds = new Set(Object.values(oldState.tasks).flat().map((t) => t.id));
+  const newTaskIds = new Set(Object.values(newState.tasks).flat().map((t) => t.id));
+  const toDeleteAll = Array.from(oldTaskIds).filter((id) => !newTaskIds.has(id));
+  const tasksUpsert = Object.entries(newState.tasks).flatMap(([dateKey, tasks]) =>
+    tasks.map((t) => ({ id: t.id, user_id: userId, day_index: parseDateKey(dateKey).getDay(), text: t.text, status: t.status }))
+  );
+  const newOverdueIds = new Set(newState.overdue.map((o) => o.id));
+  const overdueDelete = oldState.overdue.filter((o) => !newOverdueIds.has(o.id)).map((o) => o.id);
+  const overdueUpsert = newState.overdue.map((o) => ({ id: o.id, user_id: userId, text: o.text, from_day: o.from }));
 
-  // Phase 1: all deletes (must run before inserts to handle cross-date-key moves)
-  const toDeleteAll: number[] = [];
-  for (const dateKey of allDateKeys) {
-    const oldTasks = oldState.tasks[dateKey] || [];
-    const newTasks = newState.tasks[dateKey] || [];
-    const newIds = new Set(newTasks.map((t) => t.id));
-    for (const t of oldTasks) {
-      if (!newIds.has(t.id)) toDeleteAll.push(t.id);
+  let rpcOk = false;
+  try {
+    const { error: rpcErr } = await supabase.rpc('sync_tasks_overdue', {
+      p_user_id: userId,
+      p_tasks_upsert: JSON.stringify(tasksUpsert),
+      p_tasks_delete: toDeleteAll,
+      p_overdue_upsert: JSON.stringify(overdueUpsert),
+      p_overdue_delete: overdueDelete,
+    });
+    if (!rpcErr) {
+      rpcOk = true;
+    } else if (
+      typeof rpcErr.message === 'string'
+      && rpcErr.message.includes('function')
+      && (rpcErr.message.includes('not found') || rpcErr.message.includes('does not exist'))
+    ) {
+      // RPC not deployed — fall through to sequential
+    } else {
+      throw new Error(`[sync] tasks RPC: ${rpcErr.message}`);
+    }
+  } catch (e) {
+    if (e instanceof Error && (e.message.includes('function') || e.message.includes('does not exist'))) {
+      // RPC not deployed — fall through to sequential
+    } else {
+      throw e;
     }
   }
-  if (toDeleteAll.length > 0) {
-    await q(supabase.from('tasks').delete().in('id', toDeleteAll).eq('user_id', userId), 'tasks delete');
-  }
 
-  // Phase 2: inserts and updates
-  for (const dateKey of allDateKeys) {
-    const oldTasks = oldState.tasks[dateKey] || [];
-    const newTasks = newState.tasks[dateKey] || [];
-    const oldIds = new Set(oldTasks.map((t) => t.id));
-
-    const toInsert = newTasks.filter((t) => !oldIds.has(t.id));
-    if (toInsert.length > 0) {
-      const dayOfWeek = parseDateKey(dateKey).getDay();
-      await q(supabase.from('tasks').upsert(
-        toInsert.map((t) => ({ id: t.id, user_id: userId, day_index: dayOfWeek, text: t.text, status: t.status })),
-      ), `tasks upsert ${dateKey}`);
+  if (!rpcOk) {
+    // Sequential fallback — delete any removed tasks by id and upsert all current tasks.
+    if (toDeleteAll.length > 0) {
+      await q(supabase.from('tasks').delete().in('id', toDeleteAll).eq('user_id', userId), 'tasks delete');
     }
-
-    for (const t of newTasks.filter((t) => oldIds.has(t.id))) {
-      const oldT = oldTasks.find((ot) => ot.id === t.id);
-      if (oldT && (oldT.text !== t.text || oldT.status !== t.status)) {
-        const dayOfWeek = parseDateKey(dateKey).getDay();
-        await q(supabase.from('tasks').update({ text: t.text, status: t.status, day_index: dayOfWeek }).eq('id', t.id).eq('user_id', userId), `tasks update ${t.id}`);
-      }
+    if (tasksUpsert.length > 0) {
+      await q(supabase.from('tasks').upsert(tasksUpsert), 'tasks upsert');
     }
-  }
-
-  // Overdue tasks — diff by id
-  {
-    const oldIds = new Set(oldState.overdue.map((o) => o.id));
-    const newIds = new Set(newState.overdue.map((o) => o.id));
-    const toDelete = oldState.overdue.filter((o) => !newIds.has(o.id)).map((o) => o.id);
-    if (toDelete.length > 0) {
-      await q(supabase.from('overdue_tasks').delete().in('id', toDelete).eq('user_id', userId), 'overdue delete');
+    // Overdue
+    if (overdueDelete.length > 0) {
+      await q(supabase.from('overdue_tasks').delete().in('id', overdueDelete).eq('user_id', userId), 'overdue delete');
     }
-    const toInsert = newState.overdue.filter((o) => !oldIds.has(o.id));
-    if (toInsert.length > 0) {
-      await q(supabase.from('overdue_tasks').upsert(
-        toInsert.map((o) => ({ id: o.id, user_id: userId, text: o.text, from_day: o.from })),
-      ), 'overdue upsert');
+    if (overdueUpsert.length > 0) {
+      await q(supabase.from('overdue_tasks').upsert(overdueUpsert), 'overdue upsert');
     }
   }
 
@@ -563,8 +495,10 @@ export function StateProvider({ children }: { children: ReactNode }) {
 
   // Hydrate from localStorage on mount. Server + client both render null initially,
   // so there's no hydration mismatch. The effect runs once on the client.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setLocalState(loadLocalState() || createDefaultState()); }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLocalState(applyAutoCarry(loadLocalState() || createDefaultState()));
+  }, []);
   const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [syncError, setSyncErrorMsg] = useState<string | null>(null);
@@ -582,8 +516,12 @@ export function StateProvider({ children }: { children: ReactNode }) {
       if (s) {
         const remote = await loadFullState(s.user.id);
         if (remote) {
-          setLocalState((prev) => mergeStates(prev, remote));
+          setLocalState((prev) => applyAutoCarry(mergeAppStates(prev, remote)));
+        } else {
+          setLocalState((prev) => (prev ? applyAutoCarry(prev) : prev));
         }
+      } else {
+        setLocalState((prev) => (prev ? applyAutoCarry(prev) : prev));
       }
     });
 
@@ -616,10 +554,9 @@ export function StateProvider({ children }: { children: ReactNode }) {
       setSyncErrorMsg(null);
       syncDelta(oldState, newState, session.user.id).then(() => {
         setSyncStatus('idle');
+        setSyncErrorMsg(null);
       }).catch((e: Error) => {
         console.error('syncDelta failed:', e);
-        setLocalState(oldState);
-        if (oldState) saveLocalState(oldState);
         setSyncStatus('error');
         setSyncErrorMsg('Connection lost — changes saved locally');
       }).finally(() => { syncingRef.current = false; });
@@ -639,7 +576,7 @@ export function StateProvider({ children }: { children: ReactNode }) {
     const remoteState = await loadFullState(userId);
 
     if (remoteState) {
-      const merged = mergeStates(currentState, remoteState);
+      const merged = applyAutoCarry(mergeAppStates(currentState, remoteState));
       if (merged !== currentState) {
         setLocalState(merged);
       }

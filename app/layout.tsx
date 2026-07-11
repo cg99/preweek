@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { StateProvider } from "@/app/providers/StateProvider";
+import { ToastProvider } from "@/app/providers/ToastProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -38,7 +39,9 @@ export default function RootLayout({
       </head>
     <body className="h-full bg-surface">
       <StateProvider>
-        <div className="mx-auto w-full max-w-2xl xl:max-w-3xl">{children}</div>
+        <ToastProvider>
+          <div className="mx-auto w-full max-w-2xl xl:max-w-3xl">{children}</div>
+        </ToastProvider>
       </StateProvider>
     </body>
     </html>

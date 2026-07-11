@@ -1,7 +1,8 @@
 'use client';
 
 import { useAppState } from '@/app/hooks/useAppState';
-import { useToast, ToastDisplay } from '@/app/components/Toast';
+import { useToast } from '@/app/providers/ToastProvider';
+import { generateOfflineId } from '@/lib/appState';
 import { HabitCard } from './HabitCard';
 import { AddHabitModal } from './AddHabitModal';
 import { EditHabitModal } from './EditHabitModal';
@@ -10,7 +11,7 @@ import { useState } from 'react';
 export function HabitsScreen() {
   const { state, setState } = useAppState();
   const todayIdx = new Date().getDay();
-  const { show: showToast, toast, close } = useToast();
+  const { show: showToast } = useToast();
   const [showAddHabit, setShowAddHabit] = useState(false);
   const [editingHabitId, setEditingHabitId] = useState<number | null>(null);
 
@@ -46,13 +47,12 @@ export function HabitsScreen() {
     if (!state) return;
     const newState = structuredClone(state);
     newState.habits.push({
-      id: state.nextHabitId,
+      id: generateOfflineId(),
       icon,
       name,
       streak: 0,
       log: [0, 0, 0, 0, 0, 0, 0],
     });
-    newState.nextHabitId += 1;
     setState(newState);
     showToast('Practice added');
   };
@@ -142,8 +142,6 @@ export function HabitsScreen() {
         onSave={handleEditHabit}
       />
 
-      {/* Toast */}
-      <ToastDisplay toast={toast} onClose={close} />
     </section>
   );
 }
